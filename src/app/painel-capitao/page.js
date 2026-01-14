@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useRef } from 'react'
-import { UserPlus, Users, ArrowLeft, Mail, Lock, FileText, Upload, CheckCircle, AlertTriangle, GraduationCap, Printer } from 'lucide-react'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import { UserPlus, Users, ArrowLeft, Mail, Lock, FileText, Upload, CheckCircle, AlertTriangle, GraduationCap, Printer, RefreshCcw } from 'lucide-react'
 import Link from 'next/link'
 
 async function safeJson(res) {
@@ -33,10 +33,12 @@ export default function PainelProfessor() {
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef(null)
 
-  async function acessarPainel() {
+  // --- FUNÇÃO DE LOGIN / ATUALIZAÇÃO ---
+  // Usamos useCallback para poder chamar essa função dentro do useEffect sem loop infinito
+  const acessarPainel = useCallback(async (isSilent = false) => {
     if (!emailBusca || !senhaBusca) return alert('Digite e-mail e senha!')
 
-    setLoading(true)
+    if (!isSilent) setLoading(true)
     try {
       const res = await fetch('/api/capitao/login', {
         method: 'POST',
@@ -50,20 +52,35 @@ export default function PainelProfessor() {
       const data = await safeJson(res)
 
       if (!res.ok || !data?.ok) {
-        alert(data?.error || 'Dados incorretos!')
+        if (!isSilent) alert(data?.error || 'Dados incorretos!')
         setLoading(false)
         return
       }
 
       setEquipe(data.equipe)
-      setAcessoLiberado(true)
-      await carregarAtletas(data.equipe.id)
+      if (!acessoLiberado) setAcessoLiberado(true)
+      
+      // Carregar atletas apenas se for login inicial ou atualização manual
+      if (!isSilent) await carregarAtletas(data.equipe.id)
+      
     } catch (e) {
       console.error(e)
-      alert('Erro de conexão.')
+      if (!isSilent) alert('Erro de conexão.')
     }
-    setLoading(false)
-  }
+    if (!isSilent) setLoading(false)
+  }, [emailBusca, senhaBusca, acessoLiberado])
+
+  // --- AUTO REFRESH (A cada 10s verifica se o Admin aprovou) ---
+  useEffect(() => {
+    let intervalo
+    if (acessoLiberado) {
+        intervalo = setInterval(() => {
+            acessarPainel(true) // true = silencioso
+        }, 10000)
+    }
+    return () => clearInterval(intervalo)
+  }, [acessoLiberado, acessarPainel])
+
 
   async function carregarAtletas(equipeId) {
     try {
@@ -114,7 +131,7 @@ export default function PainelProfessor() {
     setLoading(false)
   }
 
-  // --- GERAR TERMO COM DIREITO DE IMAGEM ---
+  // --- GERAR TERMO ---
   function gerarTermo() {
     if (atletas.length === 0) return alert("Cadastre os atletas antes de gerar o termo.")
     
@@ -230,8 +247,10 @@ export default function PainelProfessor() {
             })
             const data = await safeJson(res)
             if (res.ok) {
-                alert("Documento enviado com sucesso! O status da equipe será atualizado após análise.")
+                alert("Documento enviado com sucesso! Aguarde a validação da organização.")
                 setTermoFile(null)
+                // Atualiza status localmente
+                acessarPainel()
             } else {
                 alert(data.error || "Erro ao enviar.")
             }
@@ -272,7 +291,7 @@ export default function PainelProfessor() {
               <input type="password" placeholder="Senha de acesso" className="w-full p-4 pl-12 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold text-slate-900 outline-none focus:border-blue-600 transition-all placeholder:text-slate-400" value={senhaBusca} onChange={(e) => setSenhaBusca(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') acessarPainel() }} />
             </div>
 
-            <button onClick={acessarPainel} disabled={loading} className="w-full bg-slate-900 text-white font-black py-4 rounded-xl hover:bg-blue-600 transition-all uppercase tracking-widest text-xs shadow-lg disabled:opacity-60">
+            <button onClick={() => acessarPainel(false)} disabled={loading} className="w-full bg-slate-900 text-white font-black py-4 rounded-xl hover:bg-blue-600 transition-all uppercase tracking-widest text-xs shadow-lg disabled:opacity-60">
               {loading ? 'Acessando...' : 'Entrar no Painel'}
             </button>
 
@@ -316,7 +335,10 @@ export default function PainelProfessor() {
                     </div>
                     <div className={`h-10 w-1 ${equipe?.termo_assinado ? 'bg-green-500' : 'bg-red-500'} rounded-full`}></div>
                     <div>
-                        <p className="text-[10px] font-black uppercase text-blue-300 tracking-widest">Documentação</p>
+                        <div className="flex items-center gap-2 mb-1">
+                            <p className="text-[10px] font-black uppercase text-blue-300 tracking-widest">Documentação</p>
+                            <button onClick={() => acessarPainel(true)} className="text-slate-400 hover:text-white" title="Atualizar Status"><RefreshCcw size={10}/></button>
+                        </div>
                         {equipe?.termo_assinado ? (
                             <p className="text-green-400 font-bold text-sm flex items-center gap-1"><CheckCircle size={14}/> Regular</p>
                         ) : (
