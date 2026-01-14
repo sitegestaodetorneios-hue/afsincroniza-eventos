@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   Settings, LayoutDashboard, Users, Trash2, CheckCircle, Phone,
   Image as ImageIcon, AlignLeft, LogOut, ClipboardList, Loader2,
-  AlertCircle, Save, Trophy, Type, Calendar, MapPin, DollarSign
+  AlertCircle, Save, Trophy, Type, Calendar, MapPin, DollarSign, FileText
 } from 'lucide-react'
 
 // --- FUNÇÕES AUXILIARES ---
@@ -37,29 +37,17 @@ export default function AdminPanel() {
   const [loading, setLoading] = useState(false)
   const [equipes, setEquipes] = useState([])
 
-  // Configuração Padrão Completa (Todos os campos do banco)
   const defaultConfig = useMemo(() => ({
       id: 1,
-      // 1. Identidade
       nome_competicao: '', nome_empresa: '', logo_url: '', whatsapp: '',
-      
-      // 2. Hero (Capa)
       texto_topo: '', titulo_destaque: '', subtitulo: '', 
       imagem_fundo: '', titulo_card_hero: '', texto_card_hero: '',
       data_limite: '', valor_premio: '',
-      
-      // 3. Sobre
       slogan: '', texto_empresa: '', missao: '', valores: '',
-      
-      // 4. Modalidade Futsal
       status_futsal: 'EM_BREVE', titulo_futsal: '', desc_futsal: '', 
       local_futsal: '', inicio_futsal: '', vagas_futsal: 0,
-      
-      // 5. Modalidade Society
       status_society: 'EM_BREVE', titulo_society: '', desc_society: '', 
       local_society: '', inicio_society: '', vagas_society: 0,
-      
-      // 6. Rodapé
       texto_footer: '',
     }), []
   )
@@ -183,19 +171,30 @@ export default function AdminPanel() {
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm">
                     <thead className="bg-slate-50 uppercase font-black text-xs text-slate-400 tracking-wider border-b border-slate-100">
-                    <tr><th className="p-6">Time / Local</th><th className="p-6">Responsável</th><th className="p-6">WhatsApp</th><th className="p-6 text-center">Pagamento</th><th className="p-6 text-right">Ações</th></tr>
+                    <tr>
+                        <th className="p-6">Time / Local</th>
+                        <th className="p-6">Responsável</th>
+                        <th className="p-6">WhatsApp</th>
+                        <th className="p-6 text-center">Pagamento</th>
+                        <th className="p-6 text-center">Documento</th>
+                        <th className="p-6 text-right">Ações</th>
+                    </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
-                    {loading && <tr><td colSpan="5" className="p-10 text-center text-slate-400"><Loader2 className="animate-spin mx-auto mb-2"/>Carregando dados...</td></tr>}
+                    {loading && <tr><td colSpan="6" className="p-10 text-center text-slate-400"><Loader2 className="animate-spin mx-auto mb-2"/>Carregando dados...</td></tr>}
                     {!loading && equipes.map((eq) => {
                         const link = waLink(eq.whatsapp)
                         return (
                         <tr key={eq.id} className="hover:bg-blue-50/50 transition-colors group">
-                            <td className="p-6"><p className="font-black text-slate-900 text-lg">{eq.nome_equipe}</p><p className="text-xs font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1">{eq.modalidade || 'FUTSAL'} • {eq.cidade}</p></td>
+                            <td className="p-6">
+                                <p className="font-black text-slate-900 text-lg">{eq.nome_equipe}</p>
+                                <p className="text-xs font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1">{eq.modalidade || 'FUTSAL'} • {eq.cidade}</p>
+                            </td>
                             <td className="p-6"><div className="space-y-1"><p className="font-bold text-slate-700 flex items-center gap-2"><Users size={14} className="text-blue-500"/> {eq.nome_capitao}</p><div className="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded inline-block font-mono border border-slate-200">Login: {eq.email}</div></div></td>
                             <td className="p-6">{link ? <a href={link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 bg-green-50 text-green-700 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-green-100 transition-colors border border-green-100 shadow-sm"><Phone size={14} /> {formatPhoneDisplay(eq.whatsapp)}</a> : <span className="text-slate-400 font-semibold flex items-center gap-2 text-xs"><AlertCircle size={14}/> Inválido</span>}</td>
                             <td className="p-6 text-center">{eq.pago ? <span className="inline-flex items-center gap-1.5 bg-green-100 text-green-700 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wide border border-green-200"><CheckCircle size={12}/> Confirmado</span> : <span className="inline-flex items-center gap-1.5 bg-yellow-50 text-yellow-700 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wide border border-yellow-100">Pendente</span>}</td>
-                            <td className="p-6 text-right"><div className="flex justify-end gap-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">{!eq.pago && <button onClick={() => gerenciarEquipe(eq.id, 'approve')} className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-600 hover:text-white transition-all border border-blue-100" title="Aprovar Pagamento Manualmente"><CheckCircle size={18} /></button>}<button onClick={() => gerenciarEquipe(eq.id, 'delete')} className="p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-600 hover:text-white transition-all border border-red-100" title="Excluir Equipe"><Trash2 size={18} /></button></div></td>
+                            <td className="p-6 text-center">{eq.termo_url ? <a href={eq.termo_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 bg-blue-100 text-blue-700 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase hover:bg-blue-200 transition-colors border border-blue-200"><FileText size={14}/> Ver Termo</a> : <span className="text-slate-300 text-xs font-bold uppercase tracking-wider">Pendente</span>}</td>
+                            <td className="p-6 text-right"><div className="flex justify-end gap-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">{!eq.pago && <button onClick={() => gerenciarEquipe(eq.id, 'approve')} className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-600 hover:text-white transition-all border border-blue-100" title="Aprovar"><CheckCircle size={18} /></button>}<button onClick={() => gerenciarEquipe(eq.id, 'delete')} className="p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-600 hover:text-white transition-all border border-red-100" title="Excluir"><Trash2 size={18} /></button></div></td>
                         </tr>
                         )
                     })}

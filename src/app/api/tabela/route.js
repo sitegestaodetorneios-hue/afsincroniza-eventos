@@ -17,38 +17,104 @@ export async function GET(request) {
   const supabase = supabaseAnon()
 
   try {
-    // 1. Buscar TODAS as etapas para o menu (NOVO)
-    const { data: menuEtapas } = await supabase
-        .from('etapas')
-        .select('id, titulo, status, modalidade')
-        .order('created_at', { ascending: false })
-
     let etapa = null
 
-    // 2. Definir qual etapa mostrar
+    // 1. Identificar Etapa
     if (etapaIdParam) {
-      // Se o usuário clicou numa etapa específica
-      etapa = menuEtapas.find(e => String(e.id) === String(etapaIdParam))
+      const { data } = await supabase.from('etapas').select('*').eq('id', etapaIdParam).single()
+      etapa = data
     } else {
-      // Padrão: Pega a que está EM_ANDAMENTO ou a primeira da lista (mais recente)
-      etapa = menuEtapas.find(e => e.status === 'EM_ANDAMENTO') || menuEtapas[0]
+      let { data: active } = await supabase.from('etapas').select('*').eq('status', 'EM_ANDAMENTO').limit(1)
+      etapa = active?.[0] || (await supabase.from('etapas').select('*').order('created_at', { ascending: false }).limit(1)).data?.[0]
     }
 
-    if (!etapa) return NextResponse.json({ etapa: null, classificacao: [], finais: [], menu: [] })
+    if (!etapa) return NextResponse.json({ etapa: null, classificacao: [], finais: [], menu: [], artilharia: [] })
 
-    // 3. Classificação
-    const { data: dados } = await supabase.from('vw_tabela_oficial').select('*').eq('etapa_id', etapa.id)
+    // 2. Buscar Dados Básicos
+    const { data: dadosView } = await supabase.from('vw_tabela_oficial').select('*').eq('etapa_id', etapa.id)
     
-    const sorted = (dados || []).sort((a, b) => {
+    // 3. Buscar Eventos (Gols e Cartões)
+    const { data: jogos } = await supabase.from('jogos').select('id').eq('etapa_id', etapa.id)
+    const jogoIds = jogos?.map(j => j.id) || []
+
+    let eventos = []
+    if (jogoIds.length > 0) {
+        const { data: evs } = await supabase
+            .from('jogo_eventos')
+            .select(`
+                id, tipo, equipe_id, atleta_id,
+                atletas (id, nome),
+                equipes (id, nome_equipe)
+            `)
+            .in('jogo_id', jogoIds)
+        eventos = evs || []
+    }
+
+    // 4. Processar Estatísticas
+    const statsTime = {} 
+    const golsPorAtletaId = {}
+
+    eventos.forEach(ev => {
+        // Cartões
+        if (!statsTime[ev.equipe_id]) statsTime[ev.equipe_id] = { am: 0, verm: 0 }
+        if (ev.tipo === 'AMARELO') statsTime[ev.equipe_id].am++
+        if (ev.tipo === 'VERMELHO') statsTime[ev.equipe_id].verm++
+
+        // Gols (Artilharia)
+        if (ev.tipo === 'GOL' && ev.atleta_id) {
+            golsPorAtletaId[ev.atleta_id] = (golsPorAtletaId[ev.atleta_id] || 0) + 1
+        }
+    })
+
+    // 5. Montar Artilharia
+    const idsArtilheiros = Object.keys(golsPorAtletaId)
+    let artilhariaFinal = []
+    
+    if (idsArtilheiros.length > 0) {
+        const { data: atletas } = await supabase.from('atletas').select('id, nome, equipe_id').in('id', idsArtilheiros)
+        const equipeIds = atletas?.map(a => a.equipe_id) || []
+        const { data: equipes } = await supabase.from('equipes').select('id, nome_equipe').in('id', equipeIds)
+        const equipeMap = {}
+        equipes?.forEach(eq => equipeMap[eq.id] = eq.nome_equipe)
+
+        artilhariaFinal = atletas?.map(atleta => ({
+            id: atleta.id,
+            nome: atleta.nome,
+            equipe: equipeMap[atleta.equipe_id] || 'Time',
+            gols: golsPorAtletaId[atleta.id]
+        })) || []
+
+        artilhariaFinal.sort((a, b) => b.gols - a.gols).slice(0, 10)
+    }
+
+    // 6. Classificação PADRÃO FIFA
+    // Critérios: Pontos > Saldo de Gols > Gols Pró > Confronto Direto (ignorado aqui) > Fair Play
+    const classificacaoFinal = (dadosView || []).map(time => {
+        const cartoes = statsTime[time.equipe_id] || { am: 0, verm: 0 }
+        return { ...time, ca: cartoes.am, cv: cartoes.verm }
+    }).sort((a, b) => {
+        // 1. Pontos
         if (b.pts !== a.pts) return b.pts - a.pts;
-        if (b.v !== a.v) return b.v - a.v;
+        
+        // 2. Saldo de Gols (Padrão FIFA vem antes de vitórias)
         const sgA = a.gp - a.gc;
         const sgB = b.gp - b.gc;
         if (sgB !== sgA) return sgB - sgA;
-        return b.gp - a.gp;
+        
+        // 3. Gols Pró (Ataque mais positivo)
+        if (b.gp !== a.gp) return b.gp - a.gp;
+
+        // 4. Número de Vitórias (Desempate comum secundário)
+        if (b.v !== a.v) return b.v - a.v;
+
+        // 5. Fair Play (Menos Vermelhos)
+        if (a.cv !== b.cv) return a.cv - b.cv; 
+        
+        // 6. Fair Play (Menos Amarelos)
+        return a.ca - b.ca;
     });
 
-    // 4. Finais/Jogos Decisivos
+    // 7. Dados Finais
     const { data: finais } = await supabase
         .from('jogos')
         .select(`
@@ -57,14 +123,17 @@ export async function GET(request) {
             equipeB:equipes!jogos_equipe_b_id_fkey(nome_equipe)
         `)
         .eq('etapa_id', etapa.id)
-        .in('tipo_jogo', ['FINAL', 'DISPUTA_3', 'SEMI', 'QUARTAS']) // Adicionei Semi/Quartas se quiser usar
+        .in('tipo_jogo', ['FINAL', 'DISPUTA_3', 'SEMI', 'QUARTAS'])
         .order('tipo_jogo', { ascending: false })
+
+    const { data: menu } = await supabase.from('etapas').select('id, titulo, status, modalidade').order('created_at', { ascending: false })
 
     return NextResponse.json({ 
         etapa, 
-        classificacao: sorted,
+        classificacao: classificacaoFinal,
+        artilharia: artilhariaFinal,
         finais: finais || [],
-        menu: menuEtapas || [] // Envia a lista para o front
+        menu: menu || []
     })
 
   } catch (e) {
