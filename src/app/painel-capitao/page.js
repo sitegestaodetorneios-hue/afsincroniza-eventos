@@ -21,9 +21,13 @@ async function safeJson(res) {
 export default function PainelProfessor() {
   const [acessoLiberado, setAcessoLiberado] = useState(false)
 
-  // Login
+  // Login (Inputs)
   const [emailBusca, setEmailBusca] = useState('')
   const [senhaBusca, setSenhaBusca] = useState('')
+  
+  // Credenciais para Auto-Refresh (Para não perder se limpar o input)
+  const [credenciaisSalvas, setCredenciaisSalvas] = useState(null)
+
   const [loading, setLoading] = useState(false)
 
   // Dados do Painel
@@ -40,40 +44,40 @@ export default function PainelProfessor() {
 
   // --- 1. LOGIN E ATUALIZAÇÃO DE DADOS ---
   const acessarPainel = useCallback(async (isSilent = false) => {
-    // Se for atualização silenciosa e não tivermos o ID da equipe, paramos
-    if (isSilent && !equipe?.id) return
-    // Se for login normal e faltar dados, avisa
-    if (!isSilent && (!emailBusca || !senhaBusca)) return alert('Digite e-mail e senha!')
+    // Define quais credenciais usar: as salvas (refresh) ou as dos inputs (login)
+    const dadosLogin = isSilent ? credenciaisSalvas : { email: emailBusca.trim(), senha: senhaBusca }
+
+    if (!dadosLogin?.email || !dadosLogin?.senha) {
+        if (!isSilent) alert('Digite e-mail e senha!')
+        return
+    }
 
     if (!isSilent) setLoading(true)
     
     try {
-      // Usa os dados salvos no state (login inicial) ou reusa para refresh
-      const payload = {
-        email: emailBusca.trim(),
-        senha: senhaBusca,
-      }
-
       const res = await fetch('/api/capitao/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(dadosLogin),
       })
 
       const data = await safeJson(res)
 
       if (!res.ok || !data?.ok) {
+        // Se falhar no silencioso, não faz nada (pode ser instabilidade momentânea)
         if (!isSilent) alert(data?.error || 'Dados incorretos!')
         setLoading(false)
         return
       }
 
-      // ATUALIZA OS DADOS DA EQUIPE (Isso que faz o status mudar sozinho)
+      // SUCESSO: Atualiza tudo
       setEquipe(data.equipe)
+      if (!acessoLiberado) {
+          setAcessoLiberado(true)
+          setCredenciaisSalvas(dadosLogin) // Salva para o auto-refresh usar depois
+      }
       
-      if (!acessoLiberado) setAcessoLiberado(true)
-      
-      // Carrega atletas apenas se não for refresh silencioso (economizar requisição)
+      // Só recarrega atletas se não for silencioso (economiza dados)
       if (!isSilent) await carregarAtletas(data.equipe.id)
       
     } catch (e) {
@@ -81,18 +85,18 @@ export default function PainelProfessor() {
       if (!isSilent) alert('Erro de conexão.')
     }
     if (!isSilent) setLoading(false)
-  }, [emailBusca, senhaBusca, acessoLiberado, equipe?.id])
+  }, [emailBusca, senhaBusca, acessoLiberado, credenciaisSalvas])
 
   // --- 2. AUTO REFRESH (A CADA 5 SEGUNDOS) ---
   useEffect(() => {
     let intervalo
-    if (acessoLiberado) {
+    if (acessoLiberado && credenciaisSalvas) {
         intervalo = setInterval(() => {
             acessarPainel(true) // Atualização silenciosa em background
         }, 5000)
     }
     return () => clearInterval(intervalo)
-  }, [acessoLiberado, acessarPainel])
+  }, [acessoLiberado, credenciaisSalvas, acessarPainel])
 
   // --- 3. CARREGAR ATLETAS ---
   async function carregarAtletas(equipeId) {
@@ -223,11 +227,11 @@ export default function PainelProfessor() {
                 alert("Documento enviado com sucesso! Aguarde a validação.")
                 setTermoFile(null)
                 
-                // --- ATUALIZAÇÃO IMEDIATA DO VISUAL (AQUI ESTÁ A MÁGICA) ---
-                // Forçamos o termo_url a ter valor e termo_assinado false
+                // --- ATUALIZAÇÃO IMEDIATA DO VISUAL (AQUI ESTÁ A CORREÇÃO PRINCIPAL) ---
+                // Forçamos o React a atualizar o estado 'equipe' com a nova URL
                 setEquipe(prev => ({
                     ...prev,
-                    termo_url: data.url || 'http://temp-url.com', 
+                    termo_url: data.url || 'temp_visual_update', 
                     termo_assinado: false
                 }))
                 
@@ -264,8 +268,8 @@ export default function PainelProfessor() {
     )
   }
 
-  // --- LÓGICA DE STATUS (CORREÇÃO DE CORES) ---
-  const docEnviado = equipe?.termo_url && equipe.termo_url !== "";
+  // --- LÓGICA DE STATUS VISUAL (CORRIGIDA) ---
+  const docEnviado = equipe?.termo_url && equipe.termo_url.length > 5; // Verifica se tem string válida
   const docAprovado = equipe?.termo_assinado === true;
 
   return (
@@ -337,31 +341,24 @@ export default function PainelProfessor() {
                         <button onClick={gerarTermo} className="w-full bg-white text-slate-900 font-bold py-3 rounded-xl hover:bg-slate-200 uppercase text-[10px] tracking-widest flex items-center justify-center gap-2 transition-colors"><Printer size={14}/> Imprimir Termo</button>
                     </div>
                     
-                    {/* ÁREA DE UPLOAD INTELIGENTE */}
                     <div className="bg-white/5 p-4 rounded-xl border border-white/10">
                         <p className="text-xs text-slate-300 font-medium mb-3">2. Colete as assinaturas, tire uma foto legível e envie aqui.</p>
                         
                         <input type="file" accept="image/*,application/pdf" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
                         
-                        {/* Se não selecionou arquivo local... */}
+                        {/* BOTÃO DE UPLOAD INTELIGENTE */}
                         {!termoFile ? (
                             docAprovado ? (
-                                // STATUS VERDE: APROVADO
-                                <div className="text-center p-3 bg-green-500/20 border border-green-500/50 rounded-xl">
-                                    <p className="text-green-400 font-bold text-xs flex items-center justify-center gap-2"><CheckCircle size={16}/> Documentação Aceita</p>
-                                </div>
+                                <div className="text-center p-3 bg-green-500/20 border border-green-500/50 rounded-xl"><p className="text-green-400 font-bold text-xs flex items-center justify-center gap-2"><CheckCircle size={16}/> Documentação Aceita</p></div>
                             ) : docEnviado ? (
-                                // STATUS AMARELO: ENVIADO MAS NÃO APROVADO
                                 <div className="text-center p-3 bg-yellow-500/20 border border-yellow-500/50 rounded-xl space-y-2">
                                     <p className="text-yellow-400 font-bold text-xs flex items-center justify-center gap-2"><Clock size={16}/> Aguardando Análise</p>
                                     <button onClick={() => fileInputRef.current?.click()} className="text-[10px] text-slate-400 hover:text-white underline">Reenviar/Corrigir</button>
                                 </div>
                             ) : (
-                                // STATUS VERMELHO: PENDENTE
                                 <button onClick={() => fileInputRef.current?.click()} className="w-full border-2 border-dashed border-slate-600 text-slate-400 font-bold py-3 rounded-xl hover:border-blue-400 hover:text-blue-300 uppercase text-[10px] tracking-widest transition-colors flex items-center justify-center gap-2"><Upload size={14}/> Anexar Foto/PDF</button>
                             )
                         ) : (
-                            // ARQUIVO SELECIONADO LOCALMENTE (PRONTO PARA ENVIAR)
                             <div className="space-y-2 animate-in fade-in zoom-in">
                                 <div className="bg-green-900/30 p-2 rounded-lg text-xs truncate flex items-center gap-2 text-green-300 border border-green-900/50"><FileText size={14}/> {termoFile.name}</div>
                                 <div className="flex gap-2">
