@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   Settings, LayoutDashboard, Users, Trash2, CheckCircle, Phone,
   Image as ImageIcon, AlignLeft, LogOut, ClipboardList, Loader2,
-  AlertCircle, Save, Trophy, Type, Calendar, MapPin, DollarSign, FileText
+  AlertCircle, Save, Trophy, Type, Calendar, MapPin, DollarSign, FileText,
+  FileCheck
 } from 'lucide-react'
 
 // --- FUNÇÕES AUXILIARES ---
@@ -37,6 +38,7 @@ export default function AdminPanel() {
   const [loading, setLoading] = useState(false)
   const [equipes, setEquipes] = useState([])
 
+  // Configuração Padrão
   const defaultConfig = useMemo(() => ({
       id: 1,
       nome_competicao: '', nome_empresa: '', logo_url: '', whatsapp: '',
@@ -96,8 +98,14 @@ export default function AdminPanel() {
     } catch (e) { alert('Erro ao salvar.') } finally { setLoading(false) }
   }
 
+  // GERENCIAR (APROVAR PAGAMENTO, APROVAR DOC, EXCLUIR)
   async function gerenciarEquipe(id, action) {
-    if (!confirm('Tem certeza?')) return
+    let confirmMsg = 'Tem certeza?'
+    if (action === 'delete') confirmMsg = 'Isso excluirá a equipe e todos os atletas. Continuar?'
+    if (action === 'approve_doc') confirmMsg = 'Confirma que o documento está assinado e correto?'
+    
+    if (!confirm(confirmMsg)) return
+
     try {
       const res = await fetch('/api/admin/teams', {
         method: 'PUT',
@@ -105,7 +113,7 @@ export default function AdminPanel() {
         body: JSON.stringify({ id, action }),
       })
       if (!res.ok) throw new Error()
-      await carregarTudo()
+      await carregarTudo() // Recarrega a lista para mostrar o novo status
     } catch (e) { alert('Falha ao executar ação.') }
   }
 
@@ -192,9 +200,44 @@ export default function AdminPanel() {
                             </td>
                             <td className="p-6"><div className="space-y-1"><p className="font-bold text-slate-700 flex items-center gap-2"><Users size={14} className="text-blue-500"/> {eq.nome_capitao}</p><div className="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded inline-block font-mono border border-slate-200">Login: {eq.email}</div></div></td>
                             <td className="p-6">{link ? <a href={link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 bg-green-50 text-green-700 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-green-100 transition-colors border border-green-100 shadow-sm"><Phone size={14} /> {formatPhoneDisplay(eq.whatsapp)}</a> : <span className="text-slate-400 font-semibold flex items-center gap-2 text-xs"><AlertCircle size={14}/> Inválido</span>}</td>
+                            
+                            {/* COLUNA PAGAMENTO */}
                             <td className="p-6 text-center">{eq.pago ? <span className="inline-flex items-center gap-1.5 bg-green-100 text-green-700 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wide border border-green-200"><CheckCircle size={12}/> Confirmado</span> : <span className="inline-flex items-center gap-1.5 bg-yellow-50 text-yellow-700 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wide border border-yellow-100">Pendente</span>}</td>
-                            <td className="p-6 text-center">{eq.termo_url ? <a href={eq.termo_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 bg-blue-100 text-blue-700 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase hover:bg-blue-200 transition-colors border border-blue-200"><FileText size={14}/> Ver Termo</a> : <span className="text-slate-300 text-xs font-bold uppercase tracking-wider">Pendente</span>}</td>
-                            <td className="p-6 text-right"><div className="flex justify-end gap-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">{!eq.pago && <button onClick={() => gerenciarEquipe(eq.id, 'approve')} className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-600 hover:text-white transition-all border border-blue-100" title="Aprovar"><CheckCircle size={18} /></button>}<button onClick={() => gerenciarEquipe(eq.id, 'delete')} className="p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-600 hover:text-white transition-all border border-red-100" title="Excluir"><Trash2 size={18} /></button></div></td>
+                            
+                            {/* COLUNA DOCUMENTO - COM BOTÃO DE APROVAR */}
+                            <td className="p-6 text-center">
+                                {eq.termo_url ? (
+                                    <div className="flex flex-col items-center gap-2">
+                                        <a href={eq.termo_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 bg-blue-50 text-blue-700 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase hover:bg-blue-100 transition-colors border border-blue-200">
+                                            <FileText size={14}/> Ver Termo
+                                        </a>
+                                        {/* Lógica do Botão Validar Documento */}
+                                        {!eq.termo_assinado ? (
+                                            <button onClick={() => gerenciarEquipe(eq.id, 'approve_doc')} className="inline-flex items-center gap-1 bg-slate-900 text-white px-3 py-1 rounded-lg text-[10px] font-bold uppercase hover:bg-green-600 transition-colors shadow-sm">
+                                                <FileCheck size={12}/> Validar
+                                            </button>
+                                        ) : (
+                                            <span className="text-[9px] bg-green-100 text-green-700 px-2 py-0.5 rounded border border-green-200 font-bold uppercase flex items-center gap-1"><CheckCircle size={10}/> Doc OK</span>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <span className="text-slate-300 text-xs font-bold uppercase tracking-wider flex flex-col items-center gap-1"><AlertCircle size={14}/> Pendente</span>
+                                )}
+                            </td>
+
+                            {/* AÇÕES (PAGAMENTO E EXCLUSÃO) */}
+                            <td className="p-6 text-right">
+                                <div className="flex justify-end gap-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                                    {!eq.pago && (
+                                        <button onClick={() => gerenciarEquipe(eq.id, 'approve')} className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-600 hover:text-white transition-all border border-blue-100" title="Aprovar Pagamento">
+                                            <DollarSign size={18} />
+                                        </button>
+                                    )}
+                                    <button onClick={() => gerenciarEquipe(eq.id, 'delete')} className="p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-600 hover:text-white transition-all border border-red-100" title="Excluir Equipe">
+                                        <Trash2 size={18} />
+                                    </button>
+                                </div>
+                            </td>
                         </tr>
                         )
                     })}
