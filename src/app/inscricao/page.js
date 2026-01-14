@@ -1,4 +1,5 @@
 'use client'
+
 import { useState, useEffect, useMemo } from 'react'
 import {
   ArrowLeft,
@@ -33,6 +34,9 @@ export default function Inscricao() {
 
   const [siteData, setSiteData] = useState(null)
 
+  // ✅ DEV PIN (funciona em produção também)
+  const [devPin, setDevPin] = useState('')
+
   const [form, setForm] = useState({
     nome_equipe: '',
     cidade: '',
@@ -42,7 +46,7 @@ export default function Inscricao() {
     senha: '',
   })
 
-  // Busca config do site (nome da competição/empresa/slogan/status)
+  // Busca config do site
   useEffect(() => {
     fetch('/api/config')
       .then((r) => r.json())
@@ -62,18 +66,16 @@ export default function Inscricao() {
     return siteData?.slogan || 'Tecnologia e organização para o esporte local.'
   }, [siteData])
 
-  // Regra: se ambos estiverem EM_BREVE, bloqueia inscrição e orienta reserva
-  // (Se você depois quiser separar por modalidade, a gente ajusta)
   const inscricoesAbertas = useMemo(() => {
     const f = (siteData?.status_futsal || 'EM_BREVE').toUpperCase()
     const s = (siteData?.status_society || 'EM_BREVE').toUpperCase()
     return f === 'ABERTA' || s === 'ABERTA'
   }, [siteData])
 
-  const whatsNumber = siteData?.whatsapp || '' // pode ficar vazio por enquanto
+  const whatsNumber = siteData?.whatsapp || ''
   const reserveMsg = `Olá! Quero reservar vaga na ${competencia}. Minha cidade é ____ e minha equipe é _____.`
 
-  // Monitora o status do pagamento (Mercado Pago simulado)
+  // Monitora status do pagamento (polling)
   useEffect(() => {
     let intervalo
     if (pixData && pixData.id && !pagamentoAprovado) {
@@ -99,7 +101,6 @@ export default function Inscricao() {
       return
     }
 
-    // Validação completa
     if (!form.nome_equipe || !form.nome_capitao || !form.whatsapp || !form.email || !form.senha) {
       alert('Por favor, preencha TODOS os campos!')
       return
@@ -119,10 +120,7 @@ export default function Inscricao() {
 
     setLoading(true)
     try {
-      const payload = {
-        ...form,
-        whatsapp: phoneDigits,
-      }
+      const payload = { ...form, whatsapp: phoneDigits }
 
       const res = await fetch('/api/equipes', {
         method: 'POST',
@@ -156,14 +154,14 @@ export default function Inscricao() {
       })
       const data = await res.json()
       if (data.qr_code_base64) setPixData(data)
-      else alert('Não consegui gerar o Pix. Tente novamente.')
+      else alert(data?.error || 'Não consegui gerar o Pix. Tente novamente.')
     } catch (error) {
       alert('Erro ao gerar Pix')
     }
     setLoading(false)
   }
 
-  // ✅ Confirmação: NÃO exibir senha
+  // Confirmação
   if (pagamentoAprovado) {
     return (
       <main className="min-h-screen bg-green-600 flex items-center justify-center p-6 text-white text-center">
@@ -197,7 +195,7 @@ export default function Inscricao() {
     )
   }
 
-  // Se config ainda não carregou
+  // Loading config
   if (!siteData) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center gap-4">
@@ -209,7 +207,7 @@ export default function Inscricao() {
     )
   }
 
-  // Se inscrições não estão abertas: orientar reserva
+  // Reserva (inscrição fechada)
   if (!inscricoesAbertas) {
     const link = waLink(whatsNumber, reserveMsg)
 
@@ -226,9 +224,7 @@ export default function Inscricao() {
           <div className="bg-white rounded-[2rem] shadow-xl border border-slate-200 overflow-hidden">
             <div className="bg-slate-900 p-8 text-white">
               <h1 className="text-2xl font-black uppercase italic tracking-tighter">Reserva de Vaga</h1>
-              <p className="text-slate-300 text-xs font-bold uppercase mt-1">
-                {competencia}
-              </p>
+              <p className="text-slate-300 text-xs font-bold uppercase mt-1">{competencia}</p>
             </div>
 
             <div className="p-8 md:p-12 space-y-6">
@@ -237,15 +233,13 @@ export default function Inscricao() {
                 <div>
                   <p className="font-black text-slate-900">Inscrições ainda não estão abertas</p>
                   <p className="text-slate-600 text-sm font-medium">
-                    Faça o pré-agendamento (reserva). Quando abrirmos a etapa, a organização entra em contato primeiro com você.
+                    Faça o pré-agendamento (reserva). Quando abrirmos, a organização entra em contato primeiro com você.
                   </p>
                 </div>
               </div>
 
               <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5">
-                <p className="text-xs font-black uppercase tracking-widest text-slate-500 mb-2">
-                  Organização
-                </p>
+                <p className="text-xs font-black uppercase tracking-widest text-slate-500 mb-2">Organização</p>
                 <p className="text-slate-900 font-black">{empresa}</p>
                 <p className="text-slate-500 text-sm font-medium mt-1">{slogan}</p>
               </div>
@@ -258,9 +252,7 @@ export default function Inscricao() {
                 </a>
               ) : (
                 <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5">
-                  <p className="text-slate-700 font-bold">
-                    Ainda sem WhatsApp oficial cadastrado.
-                  </p>
+                  <p className="text-slate-700 font-bold">Ainda sem WhatsApp oficial cadastrado.</p>
                   <p className="text-slate-500 text-sm font-medium">
                     Assim que o número for definido, a reserva será feita por aqui.
                   </p>
@@ -285,9 +277,7 @@ export default function Inscricao() {
     )
   }
 
-  // ✅ Fluxo normal de inscrição (aberta)
-  const devMode = typeof window !== 'undefined' && window.location.hostname === 'localhost'
-
+  // Fluxo normal
   return (
     <main className="min-h-screen bg-slate-50 py-12 px-6">
       <div className="max-w-2xl mx-auto">
@@ -313,12 +303,9 @@ export default function Inscricao() {
           <div className="p-8 md:p-12">
             {step === 1 ? (
               <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-500">
-                {/* LINHA 1 */}
                 <div className="grid md:grid-cols-2 gap-6">
                   <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">
-                      Nome da Equipe
-                    </label>
+                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Nome da Equipe</label>
                     <input
                       type="text"
                       autoComplete="organization"
@@ -328,9 +315,7 @@ export default function Inscricao() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">
-                      Cidade
-                    </label>
+                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Cidade</label>
                     <input
                       type="text"
                       autoComplete="address-level2"
@@ -341,12 +326,9 @@ export default function Inscricao() {
                   </div>
                 </div>
 
-                {/* LINHA 2 */}
                 <div className="grid md:grid-cols-2 gap-6">
                   <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">
-                      Nome Capitão
-                    </label>
+                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Nome Capitão</label>
                     <input
                       type="text"
                       autoComplete="name"
@@ -367,13 +349,10 @@ export default function Inscricao() {
                       placeholder="exemplo@gmail.com"
                       onChange={(e) => setForm({ ...form, email: e.target.value })}
                     />
-                    <p className="text-[9px] text-slate-400 font-bold uppercase">
-                      Este e-mail será usado para acessar o painel.
-                    </p>
+                    <p className="text-[9px] text-slate-400 font-bold uppercase">Este e-mail será usado para acessar o painel.</p>
                   </div>
                 </div>
 
-                {/* LINHA 3 */}
                 <div className="grid md:grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest flex items-center gap-1">
@@ -411,12 +390,9 @@ export default function Inscricao() {
                 </button>
               </div>
             ) : (
-              // ETAPA 2: PAGAMENTO
               <div className="text-center space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
                 <div className="bg-blue-50 border border-blue-100 p-6 rounded-2xl inline-block w-full">
-                  <p className="text-slate-400 text-xs font-black uppercase tracking-widest mb-1">
-                    Valor da Inscrição
-                  </p>
+                  <p className="text-slate-400 text-xs font-black uppercase tracking-widest mb-1">Valor da Inscrição</p>
                   <p className="text-4xl font-black text-blue-600">R$ 150,00</p>
                 </div>
 
@@ -426,9 +402,7 @@ export default function Inscricao() {
                       <div className="bg-white p-4 rounded-xl shadow-sm">
                         <CreditCard size={48} className="text-slate-300" />
                       </div>
-                      <p className="text-slate-400 text-xs font-bold uppercase max-w-[220px]">
-                        Clique abaixo para gerar o Pix
-                      </p>
+                      <p className="text-slate-400 text-xs font-bold uppercase max-w-[220px]">Clique abaixo para gerar o Pix</p>
                     </>
                   ) : (
                     <>
@@ -446,10 +420,7 @@ export default function Inscricao() {
                           value={pixData.qr_code}
                           className="flex-1 text-[10px] bg-white border p-2 rounded-lg font-mono truncate"
                         />
-                        <button
-                          onClick={() => navigator.clipboard.writeText(pixData.qr_code)}
-                          className="bg-blue-100 text-blue-600 p-2 rounded-lg"
-                        >
+                        <button onClick={() => navigator.clipboard.writeText(pixData.qr_code)} className="bg-blue-100 text-blue-600 p-2 rounded-lg">
                           <Copy size={16} />
                         </button>
                       </div>
@@ -458,10 +429,7 @@ export default function Inscricao() {
                 </div>
 
                 <div className="flex gap-4">
-                  <button
-                    onClick={() => setStep(1)}
-                    className="flex-1 bg-slate-100 text-slate-500 font-bold py-4 rounded-xl uppercase text-xs"
-                  >
+                  <button onClick={() => setStep(1)} className="flex-1 bg-slate-100 text-slate-500 font-bold py-4 rounded-xl uppercase text-xs">
                     Voltar
                   </button>
 
@@ -480,20 +448,28 @@ export default function Inscricao() {
                   )}
                 </div>
 
-                {/* DEV: só aparece em localhost */}
-                {devMode && (
-                  <div className="mt-8 pt-8 border-t border-slate-200">
-                    <p className="text-[10px] font-bold text-red-500 uppercase mb-2">
-                      Área do Desenvolvedor
-                    </p>
+                {/* ✅ DEV: Pular pagamento com PIN (funciona na Vercel) */}
+                <div className="mt-8 pt-8 border-t border-slate-200">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase mb-2">Acesso restrito (dev)</p>
+                  <div className="flex gap-2">
+                    <input
+                      type="password"
+                      placeholder="PIN"
+                      value={devPin}
+                      className="flex-1 p-3 rounded-xl border bg-slate-50 font-bold text-xs"
+                      onChange={(e) => setDevPin(e.target.value)}
+                    />
                     <button
-                      onClick={() => setPagamentoAprovado(true)}
-                      className="w-full bg-red-100 text-red-600 font-bold py-3 rounded-xl hover:bg-red-200 transition-all text-xs uppercase tracking-widest border border-red-200"
+                      onClick={() => {
+                        if (devPin === '2026') setPagamentoAprovado(true)
+                        else alert('PIN incorreto')
+                      }}
+                      className="bg-red-100 text-red-600 font-bold px-4 rounded-xl text-xs uppercase tracking-widest border border-red-200"
                     >
-                      [DEV] Pular Pagamento (Aprovar Agora)
+                      Pular
                     </button>
                   </div>
-                )}
+                </div>
               </div>
             )}
           </div>
