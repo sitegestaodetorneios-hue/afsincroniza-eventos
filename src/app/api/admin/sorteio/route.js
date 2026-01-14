@@ -5,55 +5,48 @@ export const dynamic = 'force-dynamic'
 
 function isAuthorized(request) {
   const pin = request.headers.get('x-admin-pin') || ''
-  return pin && pin === (process.env.ADMIN_PIN || '2026')
+  return pin === (process.env.ADMIN_PIN || '2026')
 }
 
 function supabaseAdmin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) throw new Error('Env ausente')
   return createClient(url, key, { auth: { persistSession: false } })
 }
 
-// embaralhar (efeito “bingo”)
-function shuffle(arr) {
-  const a = [...arr]
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
-    ;[a[i], a[j]] = [a[j], a[i]]
-  }
-  return a
-}
-
-// gera todos contra todos (round robin) – retorna lista de pares (A,B)
-function roundRobinPairs(teamIds) {
-  const teams = [...teamIds]
-  if (teams.length < 2) return []
-  // se ímpar, adiciona BYE
-  const hasBye = teams.length % 2 === 1
-  if (hasBye) teams.push(null)
-
-  const n = teams.length
-  const rounds = n - 1
-  const half = n / 2
-
+// LÓGICA NOVA: GRUPO A vs GRUPO B
+function generateInterGroupMatches(teamsA, teamsB) {
   const schedule = []
+  
+  // Clona os arrays para não alterar os originais
+  let listA = [...teamsA]
+  let listB = [...teamsB]
 
-  let arr = [...teams]
-  for (let r = 1; r <= rounds; r++) {
+  // Se os grupos tiverem tamanhos diferentes, adiciona 'BYE' (folga) no menor
+  while (listA.length < listB.length) listA.push(null)
+  while (listB.length < listA.length) listB.push(null)
+
+  const count = listA.length // Agora ambos têm o mesmo tamanho
+
+  // Número de rodadas = número de times no grupo oposto
+  // Ex: 3x3 times = 3 rodadas
+  for (let r = 0; r < count; r++) {
     const pairs = []
-    for (let i = 0; i < half; i++) {
-      const a = arr[i]
-      const b = arr[n - 1 - i]
-      if (a !== null && b !== null) pairs.push([a, b])
-    }
-    schedule.push({ rodada: r, pairs })
+    
+    for (let i = 0; i < count; i++) {
+      const timeA = listA[i]
+      // Pega o oponente em B usando deslocamento (i + r) % count
+      // Isso faz o time B "girar" a cada rodada
+      const timeB = listB[(i + r) % count]
 
-    // rotação (método do círculo)
-    const fixed = arr[0]
-    const rest = arr.slice(1)
-    rest.unshift(rest.pop())
-    arr = [fixed, ...rest]
+      if (timeA !== null && timeB !== null) {
+        pairs.push([timeA, timeB])
+      }
+    }
+    
+    if (pairs.length > 0) {
+      schedule.push({ rodada: r + 1, pairs })
+    }
   }
 
   return schedule
@@ -63,71 +56,52 @@ export async function POST(request) {
   if (!isAuthorized(request)) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
   const body = await request.json().catch(() => null)
-  if (!body) return NextResponse.json({ error: 'JSON inválido' }, { status: 400 })
-
   const etapa_id = Number(body.etapa_id || 0)
-  const data_base = body.data_base || null // ex: "2026-03-07" (sábado) ou null
-  const dias = body.dias || ['SAB', 'DOM'] // alterna sábado/domingo por rodada (configurável)
-  const modo = body.modo || 'BINGO' // BINGO = embaralha ordem dentro de cada rodada
+  const data_base = body.data_base || null 
+  const dias = body.dias || ['SAB', 'DOM'] 
 
-  if (!etapa_id) return NextResponse.json({ error: 'etapa_id obrigatório' }, { status: 400 })
+  if (!etapa_id) return NextResponse.json({ error: 'Etapa ID obrigatório' }, { status: 400 })
 
   try {
     const supabase = supabaseAdmin()
 
-    // pega etapa (categoria opcional)
-    const { data: etapa, error: errEt } = await supabase
-      .from('etapas')
-      .select('id, categoria')
-      .eq('id', etapa_id)
-      .single()
-
-    if (errEt) return NextResponse.json({ error: errEt.message }, { status: 500 })
-
-    // busca equipes vinculadas na etapa
+    // 1. Busca Equipes E SEUS GRUPOS
     const { data: rel, error: errRel } = await supabase
       .from('etapa_equipes')
-      .select('equipe_id')
+      .select('equipe_id, grupo') // <--- IMPORTANTE: Pegar o grupo
       .eq('etapa_id', etapa_id)
 
     if (errRel) return NextResponse.json({ error: errRel.message }, { status: 500 })
 
-    const teamIds = (rel || []).map(r => r.equipe_id)
+    // Separa os times
+    const teamsA = rel.filter(t => t.grupo === 'A').map(t => t.equipe_id)
+    const teamsB = rel.filter(t => t.grupo === 'B').map(t => t.equipe_id)
 
-    if (teamIds.length !== 6) {
-      // por enquanto vocês sempre falaram 6 times
-      // dá pra permitir diferente, mas 6 é o padrão inicial
-      return NextResponse.json({ error: `A etapa precisa ter exatamente 6 equipes vinculadas. Hoje: ${teamIds.length}` }, { status: 400 })
+    if (teamsA.length === 0 || teamsB.length === 0) {
+      return NextResponse.json({ error: 'É necessário ter times no Grupo A e no Grupo B. Faça o sorteio dos grupos primeiro.' }, { status: 400 })
     }
 
-    // evita duplicar: apaga jogos existentes da etapa (se você quiser manter, me fala)
+    // 2. Limpa jogos anteriores
     if (body.limpar_existentes !== false) {
-      const { error: errDel } = await supabase.from('jogos').delete().eq('etapa_id', etapa_id)
-      if (errDel) return NextResponse.json({ error: errDel.message }, { status: 500 })
+      await supabase.from('jogos').delete().eq('etapa_id', etapa_id)
     }
 
-    // gera round robin
-    const rr = roundRobinPairs(teamIds)
-
-    // transforma em inserts
+    // 3. Gera a Tabela Intergrupos
+    const agenda = generateInterGroupMatches(teamsA, teamsB)
     const inserts = []
-    for (const round of rr) {
+
+    for (const round of agenda) {
       const rodada = round.rodada
+      const pairs = round.pairs // Pares A vs B já definidos
 
-      let pairs = round.pairs
-      if (modo === 'BINGO') pairs = shuffle(pairs)
-
-      // opcional: define dia por rodada alternando SAB/DOM (se tiver data_base)
+      // Define Data (Simples)
       let data_jogo = null
       if (data_base) {
-        // rodada 1 = data_base, rodada 2 = data_base + 1 dia, rodada 3 = data_base + 7 dias ...
-        // aqui deixo simples: alterna sábado/domingo dentro do mesmo fim de semana
-        // se quiser calendário real por mês, fazemos depois
-        const dayIndex = (rodada - 1) % dias.length
-        const offset = dias[dayIndex] === 'DOM' ? 1 : 0
-        // data_base + offset
         const d = new Date(data_base + 'T00:00:00')
-        d.setDate(d.getDate() + offset)
+        // Se for tudo no mesmo dia, não soma dias. Se for dias diferentes, soma.
+        // Assumindo que você quer tudo no sábado, por exemplo.
+        // Se quiser dias diferentes, descomente abaixo:
+        // d.setDate(d.getDate() + (rodada - 1)) 
         data_jogo = d.toISOString().slice(0, 10)
       }
 
@@ -136,20 +110,22 @@ export async function POST(request) {
           etapa_id,
           rodada,
           data_jogo,
-          equipe_a_id: a,
-          equipe_b_id: b,
-          gols_a: null,
-          gols_b: null,
+          equipe_a_id: a, // Time do A
+          equipe_b_id: b, // Time do B
           finalizado: false,
-          categoria: etapa?.categoria || null,
+          tipo_jogo: 'GRUPO'
         })
       }
     }
 
-    const { data, error } = await supabase.from('jogos').insert(inserts).select()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    const { data } = await supabase.from('jogos').insert(inserts).select()
 
-    return NextResponse.json({ ok: true, jogos_criados: data?.length || inserts.length })
+    return NextResponse.json({ 
+        ok: true, 
+        jogos_criados: inserts.length,
+        detalhe: `${teamsA.length} times (A) vs ${teamsB.length} times (B)`
+    })
+
   } catch (e) {
     return NextResponse.json({ error: e.message }, { status: 500 })
   }

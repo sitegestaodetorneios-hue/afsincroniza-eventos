@@ -15,6 +15,7 @@ function supabaseAdmin() {
   return createClient(url, key, { auth: { persistSession: false } })
 }
 
+// GET: Lista todas as etapas
 export async function GET(request) {
   if (!isAuthorized(request)) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
@@ -34,7 +35,7 @@ export async function GET(request) {
 
 /**
  * POST: cria etapa
- * body: { modalidade, titulo, tipo, status, data_inicio, local }
+ * Adicionado: Lógica para garantir apenas uma etapa "EM_ANDAMENTO"
  */
 export async function POST(request) {
   if (!isAuthorized(request)) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
@@ -45,11 +46,16 @@ export async function POST(request) {
 
     const payload = {
       modalidade: (body.modalidade || 'FUTSAL').toUpperCase(),
-      titulo: body.titulo || 'Liga - 6 times (todos contra todos)',
+      titulo: body.titulo || 'Nova Etapa',
       tipo: (body.tipo || 'LIGA').toUpperCase(),
       status: (body.status || 'EM_ANDAMENTO').toUpperCase(),
       data_inicio: body.data_inicio || null,
       local: body.local || null,
+    }
+
+    // MELHORIA: Se a nova etapa for AO VIVO, encerra as outras para não confundir o site
+    if (payload.status === 'EM_ANDAMENTO') {
+        await supabase.from('etapas').update({ status: 'ENCERRADA' }).neq('id', 0)
     }
 
     const { data, error } = await supabase
@@ -67,9 +73,6 @@ export async function POST(request) {
 
 /**
  * PUT: gerencia equipes na etapa
- * body:
- *  { action: 'add_team', etapa_id, equipe_id }
- *  { action: 'remove_team', etapa_id, equipe_id }
  */
 export async function PUT(request) {
   if (!isAuthorized(request)) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
@@ -84,21 +87,13 @@ export async function PUT(request) {
     }
 
     if (action === 'add_team') {
-      const { error } = await supabase
-        .from('etapa_equipes')
-        .insert([{ etapa_id, equipe_id }])
-
+      const { error } = await supabase.from('etapa_equipes').insert([{ etapa_id, equipe_id }])
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
       return NextResponse.json({ ok: true })
     }
 
     if (action === 'remove_team') {
-      const { error } = await supabase
-        .from('etapa_equipes')
-        .delete()
-        .eq('etapa_id', etapa_id)
-        .eq('equipe_id', equipe_id)
-
+      const { error } = await supabase.from('etapa_equipes').delete().eq('etapa_id', etapa_id).eq('equipe_id', equipe_id)
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
       return NextResponse.json({ ok: true })
     }
@@ -107,4 +102,33 @@ export async function PUT(request) {
   } catch (e) {
     return NextResponse.json({ error: e.message }, { status: 500 })
   }
+}
+
+/**
+ * DELETE: Apaga etapa (NOVO)
+ * Isso permite que o botão de lixeira no admin funcione
+ */
+export async function DELETE(request) {
+    if (!isAuthorized(request)) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
+    
+    const { searchParams } = new URL(request.url)
+    const id = searchParams.get('id')
+  
+    if (!id) return NextResponse.json({ error: 'ID necessário' }, { status: 400 })
+  
+    try {
+        const supabase = supabaseAdmin()
+        
+        // O banco (Postgres) deve estar configurado com CASCADE
+        // Mas por segurança tentamos apagar vínculos primeiro se não tiver cascade
+        await supabase.from('jogos').delete().eq('etapa_id', id)
+        await supabase.from('etapa_equipes').delete().eq('etapa_id', id)
+
+        const { error } = await supabase.from('etapas').delete().eq('id', id)
+    
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ success: true })
+    } catch (e) {
+        return NextResponse.json({ error: e.message }, { status: 500 })
+    }
 }

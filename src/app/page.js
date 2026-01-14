@@ -15,6 +15,8 @@ import {
   FileText,
   CreditCard,
   Phone,
+  Radio, // Novo icone
+  LayoutList // Novo icone
 } from 'lucide-react'
 import { BRAND } from '@/lib/branding'
 
@@ -51,7 +53,7 @@ export default function Home() {
       'Organizamos competições com padrão profissional, transparência e uma experiência premium para equipes, atletas e público.'
     const missao =
       siteData?.missao ||
-      'Elevar o nível do futebol amador com organização, tecnologia e atendimento rápido.'
+      'Elevar o nível do futebol de base com organização, tecnologia e atendimento rápido.'
     const valores =
       siteData?.valores ||
       'Respeito, transparência, segurança, pontualidade e experiência.'
@@ -87,6 +89,7 @@ export default function Home() {
   // se você ainda não tem status no banco, isso vira "em breve"
   const futsalOpen = Boolean(siteData?.status_futsal === 'ABERTA' || siteData?.inscricoes_futsal_abertas)
   const suicoOpen = Boolean(siteData?.status_society === 'ABERTA' || siteData?.inscricoes_society_abertas)
+  const algumaInscricaoAberta = futsalOpen || suicoOpen
 
   const heroTitle = siteData?.titulo_destaque || defs.competitionName
   const heroSubtitle =
@@ -131,8 +134,8 @@ export default function Home() {
       </div>
 
       {/* NAVBAR */}
-      <nav className="bg-white/80 backdrop-blur-md border-b border-slate-200 py-4 px-6 md:px-12 flex flex-col md:flex-row justify-between items-center sticky top-0 z-50">
-        <div className="flex items-center gap-3">
+      <nav className="bg-white/80 backdrop-blur-md border-b border-slate-200 py-4 px-6 md:px-12 flex flex-col lg:flex-row justify-between items-center sticky top-0 z-50">
+        <div className="flex items-center gap-3 mb-4 lg:mb-0">
           <div className="bg-white border border-slate-200 p-2 rounded-xl shadow-sm">
             {/* Logo oficial */}
             <img src={logoUrl} alt={defs.companyName} className="h-10 w-auto object-contain" />
@@ -148,10 +151,27 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="flex flex-wrap justify-center gap-2 md:gap-6 text-xs font-bold uppercase tracking-widest text-slate-500 items-center mt-4 md:mt-0">
-          <a href="#sobre" className="hover:text-blue-600 transition-colors px-3 py-2 rounded-lg hover:bg-slate-50">
-            A Empresa
-          </a>
+        {/* --- NOVO: MENU MATCH CENTER --- */}
+        <div className="flex gap-2 bg-slate-100 p-1 rounded-lg border border-slate-200 mb-4 lg:mb-0">
+            <Link href="/ao-vivo">
+                <button className="flex items-center gap-2 px-3 py-2 rounded-md font-black text-[10px] uppercase bg-white text-red-600 shadow-sm hover:scale-105 transition-transform border border-slate-100">
+                    <Radio size={12} className="animate-pulse"/> Ao Vivo
+                </button>
+            </Link>
+            <Link href="/tabela">
+                <button className="flex items-center gap-2 px-3 py-2 rounded-md font-bold text-[10px] uppercase text-slate-600 hover:bg-white hover:text-blue-600 transition-colors">
+                    <Trophy size={12}/> Tabela
+                </button>
+            </Link>
+            <Link href="/partidas">
+                <button className="flex items-center gap-2 px-3 py-2 rounded-md font-bold text-[10px] uppercase text-slate-600 hover:bg-white hover:text-blue-600 transition-colors">
+                    <Calendar size={12}/> Jogos
+                </button>
+            </Link>
+        </div>
+        {/* -------------------------------- */}
+
+        <div className="flex flex-wrap justify-center gap-2 md:gap-6 text-xs font-bold uppercase tracking-widest text-slate-500 items-center">
           <a
             href="#competicoes"
             className="hover:text-blue-600 transition-colors px-3 py-2 rounded-lg hover:bg-slate-50"
@@ -171,7 +191,7 @@ export default function Home() {
 
           <Link href="/painel-capitao">
             <button className="flex items-center gap-2 border-2 border-slate-200 text-slate-600 px-5 py-2.5 rounded-xl hover:border-blue-600 hover:text-blue-600 transition-all bg-white">
-              <LogIn size={14} /> Área do Capitão
+              <LogIn size={14} /> Área do Professor
             </button>
           </Link>
         </div>
@@ -200,11 +220,21 @@ export default function Home() {
             </p>
 
             <div className="flex flex-col sm:flex-row gap-4">
-              <a href="#competicoes" className="group">
-                <button className="w-full sm:w-auto bg-slate-900 text-white font-bold px-8 py-5 rounded-2xl hover:bg-blue-600 transition-all shadow-xl shadow-slate-200 group-hover:shadow-blue-600/30 flex items-center justify-center gap-3">
-                  VER COMPETIÇÕES <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
-                </button>
-              </a>
+              
+              {/* LÓGICA DO BOTÃO PRINCIPAL: Se tiver inscrição aberta, mostra inscrever. Se não, mostra Ao Vivo. */}
+              {algumaInscricaoAberta ? (
+                  <a href="#competicoes" className="group">
+                    <button className="w-full sm:w-auto bg-slate-900 text-white font-bold px-8 py-5 rounded-2xl hover:bg-blue-600 transition-all shadow-xl shadow-slate-200 group-hover:shadow-blue-600/30 flex items-center justify-center gap-3">
+                      VER COMPETIÇÕES <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+                    </button>
+                  </a>
+              ) : (
+                  <Link href="/ao-vivo" className="group">
+                    <button className="w-full sm:w-auto bg-red-600 text-white font-bold px-8 py-5 rounded-2xl hover:bg-red-700 transition-all shadow-xl shadow-slate-200 group-hover:shadow-red-600/30 flex items-center justify-center gap-3">
+                      <PlayCircle size={18} /> ACOMPANHAR AO VIVO
+                    </button>
+                  </Link>
+              )}
 
               <a href="#inscricao">
                 <button className="w-full sm:w-auto bg-white text-slate-900 border-2 border-slate-200 font-bold px-8 py-5 rounded-2xl hover:bg-slate-50 hover:border-slate-300 transition-all flex items-center justify-center gap-2">
@@ -240,17 +270,20 @@ export default function Home() {
               <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-transparent to-transparent opacity-90" />
 
               <div className="absolute bottom-0 left-0 p-8 w-full">
+                {/* --- NOVO: CARD FLUTUANTE DE ACESSO RÁPIDO --- */}
                 <div className="bg-white/10 backdrop-blur-md border border-white/20 p-6 rounded-2xl">
-                  <p className="text-blue-300 font-black uppercase text-xs tracking-widest mb-1">
-                    {defs.companyName}
+                  <p className="text-blue-300 font-black uppercase text-xs tracking-widest mb-2 flex items-center gap-2">
+                    <Trophy size={14}/> Match Center
                   </p>
-                  <p className="text-2xl md:text-3xl font-black text-white tracking-tighter">
-                    {siteData?.titulo_card_hero || 'Organização, transparência e experiência premium.'}
+                  <p className="text-white text-sm mb-4 font-bold">
+                    Acompanhe resultados, classificação e estatísticas em tempo real.
                   </p>
-                  <p className="text-slate-200 text-xs mt-2 font-medium">
-                    {siteData?.texto_card_hero || defs.slogan}
-                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                      <Link href="/tabela" className="bg-white/20 hover:bg-white/30 text-white text-[10px] font-black uppercase py-2 rounded-lg text-center transition-colors">Ver Tabela</Link>
+                      <Link href="/partidas" className="bg-white/20 hover:bg-white/30 text-white text-[10px] font-black uppercase py-2 rounded-lg text-center transition-colors">Todos os Jogos</Link>
+                  </div>
                 </div>
+                {/* --------------------------------------------- */}
               </div>
             </div>
           </div>
@@ -503,7 +536,7 @@ export default function Home() {
               </div>
               <p className="font-black text-slate-900 text-xl mb-2">2) Inscrição + Pix</p>
               <p className="text-slate-500 text-sm leading-relaxed font-medium">
-                Preencha os dados do time e do capitão. Pagamento via Pix (quando a etapa estiver aberta).
+                Preencha os dados do time e do Professor. Pagamento via Pix (quando a etapa estiver aberta).
               </p>
               <div className="mt-6">
                 <Link href="/inscricao">
@@ -518,7 +551,7 @@ export default function Home() {
               <div className="w-12 h-12 rounded-2xl bg-green-600 text-white flex items-center justify-center mb-6">
                 <LogIn size={22} />
               </div>
-              <p className="font-black text-slate-900 text-xl mb-2">3) Área do Capitão</p>
+              <p className="font-black text-slate-900 text-xl mb-2">3) Área do Professor</p>
               <p className="text-slate-500 text-sm leading-relaxed font-medium">
                 Cadastre atletas, acompanhe status e mantenha tudo certo para o jogo.
               </p>

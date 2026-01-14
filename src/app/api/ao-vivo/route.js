@@ -1,12 +1,14 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 
+// GARANTE QUE NÃO FAZ CACHE (ATUALIZA NA HORA)
 export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
 function supabaseAnon() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  if (!url || !key) throw new Error('Env ausente: NEXT_PUBLIC_SUPABASE_URL ou NEXT_PUBLIC_SUPABASE_ANON_KEY')
+  if (!url || !key) throw new Error('Env ausente')
   return createClient(url, key, { auth: { persistSession: false } })
 }
 
@@ -21,34 +23,30 @@ export async function GET(request) {
     return NextResponse.json({ error: e.message }, { status: 500 })
   }
 
-  // 1) define etapa
+  // 1) ETAPA
   let etapa = null
   if (etapaIdParam) {
-    const { data, error } = await supabase.from('etapas').select('*').eq('id', Number(etapaIdParam)).single()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    const { data } = await supabase.from('etapas').select('*').eq('id', Number(etapaIdParam)).single()
     etapa = data
   } else {
-    // pega a mais recente em andamento (ou última)
-    const { data, error } = await supabase
-      .from('etapas')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(1)
-
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    etapa = data?.[0] || null
+    let { data: active } = await supabase.from('etapas').select('*').eq('status', 'EM_ANDAMENTO').limit(1)
+    if (active && active.length > 0) {
+        etapa = active[0]
+    } else {
+        const { data: last } = await supabase.from('etapas').select('*').order('created_at', { ascending: false }).limit(1)
+        etapa = last?.[0] || null
+    }
   }
 
   if (!etapa) {
     return NextResponse.json({ etapa: null, jogos: [], eventos: [] })
   }
 
-  // 2) jogos da etapa (placar vem de jogos.gols_a/gols_b — atualizado pelo trigger quando lança GOL)
+  // 2) JOGOS (SELECT * PEGA OS PENALTIS AUTOMATICAMENTE)
   const { data: jogos, error: errJogos } = await supabase
     .from('jogos')
-    .select('id, etapa_id, rodada, data_jogo, equipe_a_id, equipe_b_id, gols_a, gols_b, finalizado, created_at')
+    .select('*') 
     .eq('etapa_id', etapa.id)
-    .order('rodada', { ascending: true })
     .order('id', { ascending: true })
 
   if (errJogos) return NextResponse.json({ error: errJogos.message }, { status: 500 })
@@ -58,7 +56,7 @@ export async function GET(request) {
     new Set((jogos || []).flatMap(j => [j.equipe_a_id, j.equipe_b_id]))
   )
 
-  // 3) nomes das equipes
+  // 3) EQUIPES
   const { data: equipes, error: errEq } = await supabase
     .from('equipes')
     .select('id, nome_equipe')
@@ -66,20 +64,20 @@ export async function GET(request) {
 
   if (errEq) return NextResponse.json({ error: errEq.message }, { status: 500 })
 
-  // 4) eventos dos jogos (gols/cartões) com camisa_no_jogo
+  // 4) EVENTOS
   let eventos = []
   if (jogoIds.length) {
     const { data: ev, error: errEv } = await supabase
       .from('jogo_eventos')
       .select('id, jogo_id, equipe_id, atleta_id, tipo, minuto, tempo, camisa_no_jogo, observacao, created_at')
       .in('jogo_id', jogoIds)
-      .order('created_at', { ascending: true })
+      .order('created_at', { ascending: false })
 
     if (errEv) return NextResponse.json({ error: errEv.message }, { status: 500 })
     eventos = ev || []
   }
 
-  // 5) atletas usados nos eventos (pra mostrar nome + camisa cadastro)
+  // 5) ATLETAS
   const atletaIds = Array.from(new Set(eventos.map(e => e.atleta_id).filter(Boolean)))
   let atletas = []
   if (atletaIds.length) {

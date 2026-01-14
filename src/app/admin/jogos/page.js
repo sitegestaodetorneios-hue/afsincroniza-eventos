@@ -3,23 +3,17 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import {
-  ArrowLeft,
-  PlusCircle,
-  Save,
-  CheckCircle,
-  XCircle,
-  Loader2,
-  ClipboardList,
-  Trash2,
+  ArrowLeft, PlusCircle, Save, CheckCircle, XCircle, Loader2, 
+  ClipboardList, Trash2, Shuffle, Trophy, Clock, Users, Calendar, 
+  PlayCircle, StopCircle, Edit3, AlertTriangle, X, User, Lock, FileText, RotateCcw
 } from 'lucide-react'
 
+// Função auxiliar segura para ler JSON
 async function safeJson(res) {
   try {
-    return await res.json()
-  } catch {
-    const text = await res.text().catch(() => '')
-    return { error: text || `Erro ${res.status}` }
-  }
+    const text = await res.text()
+    try { return JSON.parse(text) } catch { return { error: text || `Erro ${res.status}` } }
+  } catch (e) { return { error: 'Falha na conexão' } }
 }
 
 export default function AdminJogos() {
@@ -27,671 +21,506 @@ export default function AdminJogos() {
   const [authed, setAuthed] = useState(false)
   const [loading, setLoading] = useState(false)
 
-  // ✅ Horários automáticos
-  const [horData, setHorData] = useState('') // "2026-03-07" (opcional) — filtra só jogos desta data
-  const [horInicio, setHorInicio] = useState('08:00') // HH:MM
-  const [horDuracao, setHorDuracao] = useState(20) // min
-  const [horIntervalo, setHorIntervalo] = useState(10) // min
-
+  // Dados
   const [etapas, setEtapas] = useState([])
   const [etapaId, setEtapaId] = useState('')
-  const [equipes, setEquipes] = useState([])
   const [jogos, setJogos] = useState([])
+  const [todosTimes, setTodosTimes] = useState([]) 
+  const [timesDaEtapa, setTimesDaEtapa] = useState([]) 
 
-  // ✅ Sorteio (Bingo)
-  const [sorteioDataBase, setSorteioDataBase] = useState('') // AAAA-MM-DD (sábado base)
-  const [sorteioDias, setSorteioDias] = useState('SAB_DOM') // SAB_DOM | SAB | DOM
-  const [sorteioLimpar, setSorteioLimpar] = useState(true) // apagar jogos existentes antes de gerar
-
-  const [novaEtapa, setNovaEtapa] = useState({
-    modalidade: 'FUTSAL',
-    titulo: 'Liga - 6 times (todos contra todos)',
-    tipo: 'LIGA',
-    status: 'EM_ANDAMENTO',
+  // Modal e Configs
+  const [showModalTimes, setShowModalTimes] = useState(false)
+  const [selectedTeams, setSelectedTeams] = useState(new Set())
+  const [horData, setHorData] = useState('') 
+  const [horInicio, setHorInicio] = useState('08:00')
+  const [horDuracao, setHorDuracao] = useState(50) 
+  const [horIntervalo, setHorIntervalo] = useState(5)
+  const [sorteioDataBase, setSorteioDataBase] = useState('')
+  const [sorteioLimpar, setSorteioLimpar] = useState(true)
+  const [novaEtapa, setNovaEtapa] = useState({ modalidade: 'FUTSAL', titulo: '', status: 'EM_ANDAMENTO' })
+  
+  // Novo Jogo Manual
+  const [novoJogo, setNovoJogo] = useState({ 
+      rodada: '', data_jogo: '', equipe_a_id: '', equipe_b_id: '', tipo_jogo: 'GRUPO'
   })
 
-  const [novoJogo, setNovoJogo] = useState({
-    rodada: '',
-    data_jogo: '',
-    equipe_a_id: '',
-    equipe_b_id: '',
-  })
+  function auth() { if (pin === '2026') { setAuthed(true) } else alert('PIN incorreto') }
 
-  function auth() {
-    if (pin === '2026') setAuthed(true)
-    else alert('PIN incorreto')
-  }
-
+  // --- CARREGAMENTO ---
   async function loadAll() {
     setLoading(true)
     try {
-      const [etRes, teamsRes] = await Promise.all([
+      const [etRes, allTeamsRes] = await Promise.all([
         fetch('/api/admin/etapas', { headers: { 'x-admin-pin': pin } }),
-        fetch('/api/admin/teams', { headers: { 'x-admin-pin': pin } }),
+        fetch('/api/admin/teams', { headers: { 'x-admin-pin': pin } })
       ])
-      const et = await safeJson(etRes)
-      const teams = await safeJson(teamsRes)
-
-      if (!etRes.ok) alert(et?.error || 'Erro ao carregar etapas')
-      if (!teamsRes.ok) alert(teams?.error || 'Erro ao carregar equipes')
-
-      setEtapas(Array.isArray(et) ? et : [])
-      setEquipes(Array.isArray(teams) ? teams : [])
-    } finally {
-      setLoading(false)
-    }
+      const etData = await safeJson(etRes)
+      const teamsData = await safeJson(allTeamsRes)
+      setEtapas(Array.isArray(etData) ? etData : [])
+      setTodosTimes(Array.isArray(teamsData) ? teamsData : [])
+    } catch (e) {
+      setEtapas([]); setTodosTimes([])
+    } finally { setLoading(false) }
   }
 
-  useEffect(() => {
-    if (authed) loadAll()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authed])
-
-  async function criarEtapa() {
-    setLoading(true)
-    try {
-      const res = await fetch('/api/admin/etapas', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-admin-pin': pin },
-        body: JSON.stringify(novaEtapa),
-      })
-      const data = await safeJson(res)
-      if (!res.ok) return alert(data?.error || 'Erro ao criar etapa')
-      await loadAll()
-      alert('Etapa criada!')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  async function loadJogos(etapa_id) {
-    setLoading(true)
-    try {
-      const res = await fetch(`/api/admin/jogos?etapa_id=${etapa_id}`, {
-        headers: { 'x-admin-pin': pin },
-      })
-      const data = await safeJson(res)
-      if (!res.ok) return alert(data?.error || 'Erro ao carregar jogos')
-      setJogos(Array.isArray(data) ? data : [])
-    } finally {
-      setLoading(false)
-    }
-  }
+  useEffect(() => { if (authed) loadAll() }, [authed])
 
   async function selecionarEtapa(id) {
     setEtapaId(String(id))
-    await loadJogos(id)
-  }
-
-  // ✅ GERAR SORTEIO (Bingo FIFA) – 6 times → 15 jogos
-  async function gerarSorteio() {
-    if (!etapaId) return alert('Selecione uma etapa primeiro.')
-
-    const dias = sorteioDias === 'SAB_DOM' ? ['SAB', 'DOM'] : [sorteioDias]
-
     setLoading(true)
     try {
-      const res = await fetch('/api/admin/sorteio', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-admin-pin': pin },
-        body: JSON.stringify({
-          etapa_id: Number(etapaId),
-          data_base: sorteioDataBase || null,
-          dias,
-          modo: 'BINGO',
-          limpar_existentes: sorteioLimpar,
-        }),
-      })
+        const resJogos = await fetch(`/api/admin/jogos?etapa_id=${id}`, { headers: { 'x-admin-pin': pin } })
+        const dataJogos = await safeJson(resJogos)
+        setJogos(Array.isArray(dataJogos) ? dataJogos : [])
 
-      const data = await safeJson(res)
-      if (!res.ok) return alert(data?.error || 'Erro ao gerar sorteio.')
-
-      alert(`Sorteio concluído! Jogos criados: ${data?.jogos_criados ?? 'OK'}`)
-      await loadJogos(etapaId)
-    } finally {
-      setLoading(false)
-    }
+        const resGrupos = await fetch(`/api/admin/etapas/gerenciar-times?etapa_id=${id}`, { headers: { 'x-admin-pin': pin } })
+        const dataGrupos = await safeJson(resGrupos)
+        setTimesDaEtapa(Array.isArray(dataGrupos) ? dataGrupos : [])
+    } catch (e) { setJogos([]) } finally { setLoading(false) }
   }
 
-  // ✅ GERAR HORÁRIOS para os jogos da etapa (ou só de uma data)
-  async function gerarHorarios() {
-    if (!etapaId) return alert('Selecione uma etapa')
-
+  // --- AÇÕES ---
+  async function criarEtapa() {
+    if(!novaEtapa.titulo) return alert("Digite um nome para a etapa")
     setLoading(true)
     try {
-      const res = await fetch('/api/admin/horarios', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-admin-pin': pin },
-        body: JSON.stringify({
-          etapa_id: Number(etapaId),
-          data_jogo: horData || null,
-          hora_inicio_base: horInicio,
-          duracao_min: Number(horDuracao),
-          intervalo_min: Number(horIntervalo),
-        }),
-      })
-
-      const data = await safeJson(res)
-      if (!res.ok) return alert(data?.error || 'Erro ao gerar horários')
-
-      alert(`Horários gerados! Jogos atualizados: ${data?.jogos_atualizados ?? 'OK'}`)
-      await loadJogos(etapaId)
-    } finally {
-      setLoading(false)
-    }
+      await fetch('/api/admin/etapas', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-pin': pin }, body: JSON.stringify(novaEtapa) })
+      await loadAll()
+      setNovaEtapa({...novaEtapa, titulo: ''})
+      alert('Etapa criada!')
+    } finally { setLoading(false) }
   }
 
-  async function criarJogo() {
-    if (!etapaId) return alert('Selecione uma etapa')
-    if (!novoJogo.equipe_a_id || !novoJogo.equipe_b_id) return alert('Selecione os dois times')
-    if (novoJogo.equipe_a_id === novoJogo.equipe_b_id) return alert('Times devem ser diferentes')
-
+  async function excluirEtapa(id_para_excluir) {
+    if(!confirm("TEM CERTEZA? Isso apagará a etapa e TODOS os jogos/classificação dela.")) return;
     setLoading(true)
     try {
-      const res = await fetch('/api/admin/jogos', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-admin-pin': pin },
-        body: JSON.stringify({
-          etapa_id: Number(etapaId),
-          rodada: novoJogo.rodada ? Number(novoJogo.rodada) : null,
-          data_jogo: novoJogo.data_jogo || null,
-          equipe_a_id: Number(novoJogo.equipe_a_id),
-          equipe_b_id: Number(novoJogo.equipe_b_id),
-        }),
-      })
-      const data = await safeJson(res)
-      if (!res.ok) return alert(data?.error || 'Erro ao criar jogo')
-
-      setNovoJogo({ rodada: '', data_jogo: '', equipe_a_id: '', equipe_b_id: '' })
-      await loadJogos(etapaId)
-    } finally {
-      setLoading(false)
-    }
+        await fetch(`/api/admin/etapas?id=${id_para_excluir}`, { method: 'DELETE', headers: { 'x-admin-pin': pin } })
+        if(String(etapaId) === String(id_para_excluir)) setEtapaId(''); 
+        await loadAll()
+    } finally { setLoading(false) }
   }
 
-  async function salvarPlacar(id, gols_a, gols_b) {
+  function abrirSelecaoTimes() {
+    if(!etapaId) return alert("Selecione a etapa antes.");
+    setSelectedTeams(new Set())
+    setShowModalTimes(true)
+  }
+
+  async function confirmarImportacao() {
+    if(selectedTeams.size === 0) return alert("Selecione pelo menos 1 time.");
     setLoading(true)
     try {
-      const res = await fetch('/api/admin/jogos', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'x-admin-pin': pin },
-        body: JSON.stringify({ action: 'set_score', id, gols_a, gols_b }),
-      })
-      const data = await safeJson(res)
-      if (!res.ok) return alert(data?.error || 'Erro ao salvar placar')
-      await loadJogos(etapaId)
-    } finally {
-      setLoading(false)
-    }
+        await fetch('/api/admin/etapas/gerenciar-times', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-pin': pin }, body: JSON.stringify({ action: 'import_selected', etapa_id: etapaId, selected_ids: Array.from(selectedTeams) }) })
+        setShowModalTimes(false)
+        await selecionarEtapa(etapaId)
+    } finally { setLoading(false) }
   }
 
-  async function finalizarJogo(id, finalizado) {
+  async function sortearGrupos() {
     setLoading(true)
     try {
-      const res = await fetch('/api/admin/jogos', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'x-admin-pin': pin },
-        body: JSON.stringify({ action: 'finalize', id, finalizado }),
-      })
-      const data = await safeJson(res)
-      if (!res.ok) return alert(data?.error || 'Erro ao finalizar')
-      await loadJogos(etapaId)
-    } finally {
-      setLoading(false)
-    }
+      await fetch('/api/admin/etapas/sortear-grupos', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-pin': pin }, body: JSON.stringify({ etapa_id: Number(etapaId) }) })
+      await selecionarEtapa(etapaId)
+    } finally { setLoading(false) }
   }
 
-  const equipesOptions = useMemo(() => {
-    return equipes.map((e) => ({ id: e.id, nome: e.nome_equipe }))
-  }, [equipes])
+  async function gerarJogosAuto() {
+    setLoading(true)
+    try {
+      const res = await fetch('/api/admin/sorteio', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-pin': pin }, body: JSON.stringify({ etapa_id: Number(etapaId), data_base: sorteioDataBase || null, modo: 'BINGO', limpar_existentes: sorteioLimpar }) })
+      const data = await safeJson(res)
+      if(data.error) alert(`ERRO: ${data.error}`)
+      else { alert(`Sucesso! ${data.jogos_criados} jogos criados.`); await selecionarEtapa(etapaId) }
+    } finally { setLoading(false) }
+  }
 
+  async function aplicarHorarios() {
+    if (!horData) return alert("Preencha a DATA DA RODADA.")
+    setLoading(true)
+    try {
+      const res = await fetch('/api/admin/horarios', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-pin': pin }, body: JSON.stringify({ etapa_id: Number(etapaId), data_jogo: horData, hora_inicio_base: horInicio, duracao_min: Number(horDuracao), intervalo_min: Number(horIntervalo) }) })
+      const data = await safeJson(res)
+      alert(data.msg || data.error)
+      await selecionarEtapa(etapaId)
+    } finally { setLoading(false) }
+  }
+
+  async function limparEtapa() {
+    if(!confirm("ISSO APAGA TUDO DA ETAPA. Confirmar?")) return;
+    setLoading(true)
+    try {
+        await fetch('/api/admin/etapas/gerenciar-times', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-pin': pin }, body: JSON.stringify({ action: 'clear', etapa_id: etapaId }) })
+        await selecionarEtapa(etapaId)
+    } finally { setLoading(false) }
+  }
+
+  async function atualizarJogo(payload) {
+    await fetch('/api/admin/jogos', { method: 'PUT', headers: { 'Content-Type': 'application/json', 'x-admin-pin': pin }, body: JSON.stringify(payload) })
+    await selecionarEtapa(etapaId) 
+  }
+
+  async function criarJogoManual() {
+    if (!novoJogo.equipe_a_id) return alert("Selecione o Time A!");
+    if (!novoJogo.equipe_b_id) return alert("Selecione o Time B!");
+    if (novoJogo.equipe_a_id === novoJogo.equipe_b_id) return alert("Os times devem ser diferentes!");
+
+    setLoading(true);
+    try {
+        const payload = { 
+            ...novoJogo, 
+            etapa_id: Number(etapaId), 
+            equipe_a_id: parseInt(novoJogo.equipe_a_id), 
+            equipe_b_id: parseInt(novoJogo.equipe_b_id),
+            rodada: novoJogo.rodada ? parseInt(novoJogo.rodada) : 1
+        };
+        const res = await fetch('/api/admin/jogos', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-pin': pin }, body: JSON.stringify(payload) });
+        const data = await safeJson(res);
+        if (!res.ok || data.error) alert(`Erro: ${data.error || 'Erro desconhecido'}`);
+        else { setNovoJogo({...novoJogo, equipe_a_id: '', equipe_b_id: '', rodada: ''}); await selecionarEtapa(etapaId); }
+    } catch(e) { alert("Erro de conexão."); } finally { setLoading(false); }
+  }
+
+  async function gerarFinais() {
+    if(!confirm("Gerar finais (1º vs 1º)?")) return;
+    setLoading(true)
+    try {
+      const res = await fetch('/api/admin/etapas/gerar-finais', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-pin': pin }, body: JSON.stringify({ etapa_id: Number(etapaId) }) })
+      const data = await safeJson(res)
+      if(data.success) { alert("Finais Geradas!"); await selecionarEtapa(etapaId); }
+      else alert(data.error)
+    } finally { setLoading(false) }
+  }
+
+  const grupos = useMemo(() => {
+    const lista = Array.isArray(timesDaEtapa) ? timesDaEtapa : []
+    const a = lista.filter(t => t.grupo === 'A')
+    const b = lista.filter(t => t.grupo === 'B')
+    return { A: a, B: b }
+  }, [timesDaEtapa])
+
+  // --- LOGIN ---
   if (!authed) {
     return (
       <main className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
-        <div className="bg-slate-900 p-10 rounded-2xl border border-slate-800 text-center max-w-sm w-full">
-          <h1 className="text-2xl font-black text-white uppercase mb-6">Admin • Jogos</h1>
-          <input
-            type="password"
-            placeholder="PIN"
-            className="w-full p-4 bg-slate-950 border border-slate-800 rounded-xl text-center text-white font-bold text-xl mb-4"
-            value={pin}
-            onChange={(e) => setPin(e.target.value)}
-          />
-          <button onClick={auth} className="w-full bg-blue-600 text-white font-bold py-4 rounded-xl uppercase">
-            Entrar
-          </button>
-          <Link href="/admin" className="block mt-4 text-xs font-bold text-slate-400 hover:text-slate-200 uppercase">
-            Voltar ao Admin
-          </Link>
+        <div className="bg-slate-900 p-12 rounded-[2rem] border border-slate-800 text-center max-w-sm w-full shadow-2xl">
+          <div className="w-20 h-20 bg-blue-600 rounded-3xl rotate-6 flex items-center justify-center mx-auto mb-8 shadow-lg">
+             <Lock className="text-white" size={36}/>
+          </div>
+          <h1 className="text-2xl font-black text-white uppercase mb-2">Acesso Admin</h1>
+          <input type="password" placeholder="PIN" className="w-full p-4 bg-slate-950 border border-slate-700 rounded-xl text-center text-white font-black text-4xl mb-6 outline-none focus:border-blue-600" value={pin} onChange={(e) => setPin(e.target.value)} maxLength={4} />
+          <button onClick={auth} className="w-full bg-blue-600 text-white font-black py-4 rounded-xl uppercase hover:bg-blue-500 shadow-xl">Entrar</button>
         </div>
       </main>
     )
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 py-10 px-4 md:px-10">
-      <div className="max-w-6xl mx-auto">
-        <div className="flex justify-between items-center mb-8">
-          <Link href="/admin" className="flex items-center gap-2 text-slate-500 hover:text-blue-600 font-bold text-sm uppercase transition-colors">
-            <ArrowLeft size={18} /> Voltar
-          </Link>
+    <main className="min-h-screen bg-slate-50 py-10 px-4 md:px-10 relative text-slate-800">
+      
+      {/* MODAL */}
+      {showModalTimes && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+            <div className="bg-white w-full max-w-2xl rounded-3xl p-8 max-h-[80vh] flex flex-col shadow-2xl">
+                <div className="flex justify-between items-center mb-6">
+                    <h3 className="text-2xl font-black text-slate-900 uppercase">Selecionar Times</h3>
+                    <button onClick={() => setShowModalTimes(false)} className="bg-slate-100 p-2 rounded-full"><X size={20}/></button>
+                </div>
+                <div className="flex-1 overflow-y-auto grid grid-cols-1 md:grid-cols-2 gap-3 p-2">
+                    {todosTimes.map(team => {
+                        const isSelected = selectedTeams.has(team.id);
+                        return (
+                            <div key={team.id} onClick={() => { const next = new Set(selectedTeams); if(isSelected) next.delete(team.id); else next.add(team.id); setSelectedTeams(next); }} className={`p-4 rounded-xl border-2 cursor-pointer flex justify-between items-center ${isSelected ? 'border-blue-600 bg-blue-50' : 'border-slate-100'}`}>
+                                <div><p className="font-bold text-slate-800">{team.nome_equipe}</p><p className="text-[10px] uppercase font-bold text-slate-400">{team.modalidade} • {team.cidade}</p></div>
+                                {isSelected && <CheckCircle className="text-blue-600" size={20}/>}
+                            </div>
+                        )
+                    })}
+                </div>
+                <div className="pt-6 border-t mt-4 flex justify-between items-center">
+                    <span className="font-bold text-slate-500">{selectedTeams.size} selecionados</span>
+                    <button onClick={confirmarImportacao} disabled={loading} className="bg-slate-900 text-white font-black py-3 px-8 rounded-xl hover:bg-black uppercase shadow-lg">Confirmar Importação</button>
+                </div>
+            </div>
+        </div>
+      )}
 
+      <div className="max-w-7xl mx-auto">
+        <div className="flex justify-between items-center mb-8">
+          <Link href="/admin" className="flex items-center gap-2 text-slate-500 hover:text-blue-600 font-bold text-sm uppercase"><ArrowLeft size={18} /> Voltar</Link>
           <div className="text-right">
-            <p className="text-xs font-black uppercase text-slate-400">Gerenciar jogos, sorteio, horários e súmula</p>
-            <h1 className="text-2xl font-black uppercase italic tracking-tighter text-slate-900">
-              Jogos & Súmula
-            </h1>
+            <p className="text-xs font-black uppercase text-slate-400 tracking-widest">Painel Oficial</p>
+            <h1 className="text-3xl font-black uppercase italic tracking-tighter text-slate-900">Match Center</h1>
           </div>
         </div>
 
-        {/* Etapas */}
-        <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 mb-8">
-          <div className="flex items-center justify-between">
-            <h2 className="font-black uppercase text-slate-900">Etapas</h2>
-            {loading && (
-              <span className="text-slate-400 font-bold text-xs inline-flex items-center gap-2">
-                <Loader2 className="animate-spin" size={14} /> carregando
-              </span>
-            )}
+        {/* 1. SELEÇÃO DE ETAPA */}
+        <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-8 mb-8">
+          <div className="flex justify-between items-center mb-6"><h2 className="font-black uppercase text-slate-900 text-lg flex items-center gap-2"><Trophy className="text-yellow-500" size={20}/> 1. Selecione a Etapa</h2>{loading && <Loader2 className="animate-spin text-slate-400"/>}</div>
+          <div className="grid md:grid-cols-5 gap-4 mb-8 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+            <select className="p-3 rounded-xl border bg-white font-bold text-slate-700 outline-none" value={novaEtapa.modalidade} onChange={(e) => setNovaEtapa({ ...novaEtapa, modalidade: e.target.value })}><option value="FUTSAL">FUTSAL</option><option value="SUICO">SUÍÇO</option></select>
+            <input className="p-3 rounded-xl border bg-white font-bold md:col-span-2 text-slate-700 outline-none" value={novaEtapa.titulo} onChange={(e) => setNovaEtapa({ ...novaEtapa, titulo: e.target.value })} placeholder="Nome da Etapa" />
+            <button onClick={criarEtapa} className="bg-slate-900 text-white font-black rounded-xl px-4 uppercase text-xs hover:bg-blue-600 transition-colors shadow-lg"><PlusCircle size={16} className="inline mr-2"/> Criar Nova</button>
           </div>
-
-          <div className="grid md:grid-cols-5 gap-3 mt-4">
-            <select className="p-3 rounded-xl border bg-slate-50 font-bold" value={novaEtapa.modalidade} onChange={(e) => setNovaEtapa({ ...novaEtapa, modalidade: e.target.value })}>
-              <option value="FUTSAL">FUTSAL</option>
-              <option value="SUICO">SUÍÇO</option>
-            </select>
-
-            <input className="p-3 rounded-xl border bg-slate-50 font-bold md:col-span-2" value={novaEtapa.titulo} onChange={(e) => setNovaEtapa({ ...novaEtapa, titulo: e.target.value })} />
-
-            <select className="p-3 rounded-xl border bg-slate-50 font-bold" value={novaEtapa.status} onChange={(e) => setNovaEtapa({ ...novaEtapa, status: e.target.value })}>
-              <option value="RASCUNHO">RASCUNHO</option>
-              <option value="EM_BREVE">EM BREVE</option>
-              <option value="EM_ANDAMENTO">EM ANDAMENTO</option>
-              <option value="ENCERRADA">ENCERRADA</option>
-            </select>
-
-            <button onClick={criarEtapa} className="bg-slate-900 text-white font-black rounded-xl px-4 py-3 uppercase text-xs flex items-center justify-center gap-2 hover:bg-blue-600">
-              <PlusCircle size={16} /> Criar etapa
-            </button>
-          </div>
-
-          <div className="mt-5 grid md:grid-cols-2 gap-3">
-            {etapas.map((e) => (
-              <button
-                key={e.id}
-                onClick={() => selecionarEtapa(e.id)}
-                className={`text-left p-4 rounded-2xl border font-bold transition ${
-                  String(etapaId) === String(e.id)
-                    ? 'border-blue-600 bg-blue-50'
-                    : 'border-slate-200 bg-white hover:bg-slate-50'
-                }`}
-              >
-                <div className="text-[10px] uppercase tracking-widest text-slate-400">{e.modalidade} • {e.status}</div>
-                <div className="text-slate-900 font-black">{e.titulo}</div>
-                <div className="text-xs text-slate-500 font-bold">Etapa ID: {e.id}</div>
-              </button>
+          <div className="grid md:grid-cols-3 gap-3">
+            {Array.isArray(etapas) && etapas.map((e) => (
+              <div key={e.id} className="relative group">
+                  <button onClick={() => selecionarEtapa(e.id)} className={`w-full text-left p-5 rounded-2xl border font-bold transition-all hover:scale-[1.02] ${String(etapaId) === String(e.id) ? 'border-blue-600 bg-blue-50 ring-2 ring-blue-200 shadow-md' : 'border-slate-200 bg-white hover:bg-slate-50'}`}>
+                    <div className="text-[10px] uppercase font-black tracking-widest text-slate-400 mb-1">{e.modalidade} • {e.status}</div>
+                    <div className="text-slate-900 font-black truncate text-lg pr-6">{e.titulo}</div>
+                  </button>
+                  <button onClick={(event) => { event.stopPropagation(); excluirEtapa(e.id); }} className="absolute top-4 right-4 text-red-300 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity p-2" title="Excluir Etapa"><Trash2 size={16}/></button>
+              </div>
             ))}
           </div>
         </div>
 
-        {/* Sorteio */}
-        <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 mb-8">
-          <h2 className="font-black uppercase text-slate-900">Sorteio automático (Bingo FIFA)</h2>
-          <p className="text-slate-500 text-sm font-bold mt-1">
-            Gera automaticamente 15 jogos (6 times jogam entre si). Requer 6 equipes vinculadas na etapa.
-          </p>
+        {etapaId && (
+            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                {/* 2. PAINEL DE CONTROLE */}
+                <div className="bg-slate-900 text-white rounded-3xl shadow-2xl shadow-slate-400 p-8 relative overflow-hidden">
+                    <div className="absolute top-0 right-0 p-8 opacity-5"><Trophy size={200}/></div>
+                    
+                    <div className="grid lg:grid-cols-3 gap-8 mb-8 relative z-10">
+                        <div className="bg-white/5 p-6 rounded-3xl border border-white/10">
+                            <p className="text-blue-400 text-[10px] font-black uppercase tracking-widest mb-4">Passo 1: Times</p>
+                            <div className="flex justify-between items-end mb-6">
+                                <span className="text-4xl font-black">{timesDaEtapa.length}</span>
+                                <span className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Confirmados</span>
+                            </div>
+                            <button onClick={abrirSelecaoTimes} className="w-full bg-blue-600 hover:bg-blue-500 py-3 rounded-xl font-bold text-xs uppercase flex items-center justify-center gap-2"><Users size={16}/> Selecionar Times</button>
+                        </div>
+                        <div className="lg:col-span-2 bg-white/5 p-6 rounded-3xl border border-white/10 grid grid-cols-2 gap-6 relative">
+                            <div><p className="text-yellow-400 text-[10px] font-black uppercase tracking-widest mb-3 border-b border-white/10 pb-2">Grupo A</p><ul className="text-xs font-medium text-slate-300 space-y-1">{grupos.A.map(t => <li key={t.id}>• {t.nome_equipe}</li>)}</ul></div>
+                            <div><p className="text-yellow-400 text-[10px] font-black uppercase tracking-widest mb-3 border-b border-white/10 pb-2">Grupo B</p><ul className="text-xs font-medium text-slate-300 space-y-1">{grupos.B.map(t => <li key={t.id}>• {t.nome_equipe}</li>)}</ul></div>
+                            <button onClick={sortearGrupos} className="absolute top-4 right-4 bg-slate-800 hover:bg-slate-700 py-2 px-4 rounded-lg font-bold text-[10px] uppercase flex items-center justify-center gap-2 border border-white/10"><Shuffle size={12}/> Sortear</button>
+                        </div>
+                    </div>
+                    
+                    <div className="grid lg:grid-cols-4 gap-6 pt-8 border-t border-white/10 relative z-10">
+                        <div className="col-span-2 flex items-center gap-4 bg-white/5 p-4 rounded-2xl border border-white/10">
+                            <div className="flex-1"><p className="text-blue-400 text-[10px] font-black uppercase tracking-widest mb-1">Passo 2: Tabela</p><label className="text-[10px] flex items-center gap-2 cursor-pointer text-slate-400 hover:text-white transition-colors"><input type="checkbox" checked={sorteioLimpar} onChange={e=>setSorteioLimpar(e.target.checked)} className="accent-blue-500"/> Limpar jogos atuais ao gerar</label></div>
+                            <button onClick={gerarJogosAuto} className="bg-white text-slate-900 hover:bg-slate-200 px-6 py-3 rounded-xl font-black text-xs uppercase flex items-center gap-2"><ClipboardList size={16}/> Gerar Tabela</button>
+                        </div>
+                        <div className="col-span-2 bg-black/30 p-5 rounded-2xl border border-white/10 flex flex-col gap-4">
+                            <p className="text-blue-400 text-[10px] font-black uppercase tracking-widest">Passo 3: Agenda Automática</p>
+                            <div className="grid grid-cols-3 gap-3">
+                                <div><label className="text-[9px] text-slate-500 font-bold block mb-1 uppercase">Data</label><input type="date" className="w-full bg-slate-800 border border-white/10 rounded-lg p-2 text-xs text-white" value={horData} onChange={e=>setHorData(e.target.value)} /></div>
+                                <div><label className="text-[9px] text-slate-500 font-bold block mb-1 uppercase">Início</label><input type="time" className="w-full bg-slate-800 border border-white/10 rounded-lg p-2 text-xs text-white text-center" value={horInicio} onChange={e=>setHorInicio(e.target.value)} /></div>
+                                <div><label className="text-[9px] text-slate-500 font-bold block mb-1 uppercase">Duração</label><input type="number" className="w-full bg-slate-800 border border-white/10 rounded-lg p-2 text-xs text-white text-center" value={horDuracao} onChange={e=>setHorDuracao(e.target.value)} placeholder="Min" title="Tempo total (jogo+intervalo)" /></div>
+                            </div>
+                            <button onClick={aplicarHorarios} className="w-full bg-blue-600 hover:bg-blue-500 py-3 rounded-xl font-black text-xs uppercase"><Clock size={14} className="inline mr-2"/> Aplicar Agenda</button>
+                        </div>
+                    </div>
+                    
+                    <div className="mt-8 flex justify-end gap-3 relative z-10">
+                        <button onClick={gerarFinais} className="bg-yellow-500 hover:bg-yellow-400 text-slate-900 font-black px-6 py-3 rounded-xl text-xs uppercase flex items-center gap-2"><Trophy size={16}/> Gerar Finais</button>
+                        <button onClick={limparEtapa} className="bg-red-500/10 hover:bg-red-500/20 text-red-400 font-bold px-4 py-3 rounded-xl text-xs uppercase flex items-center gap-2 border border-red-500/30"><Trash2 size={14}/> Reset</button>
+                    </div>
+                </div>
 
-          <div className="grid md:grid-cols-4 gap-3 mt-4">
-            <input className="p-3 rounded-xl border bg-slate-50 font-bold" placeholder="Data base (sábado) AAAA-MM-DD" value={sorteioDataBase} onChange={(e) => setSorteioDataBase(e.target.value)} />
+                {/* 3. LISTA DE JOGOS */}
+                <div className="space-y-6">
+                    <div className="flex items-center gap-3">
+                        <h2 className="font-black uppercase text-slate-900 text-2xl tracking-tight">Jogos</h2>
+                        <span className="bg-slate-200 text-slate-600 px-3 py-1 rounded-full text-xs font-black shadow-inner">{jogos.length}</span>
+                    </div>
+                    {jogos.length === 0 ? <div className="bg-white rounded-3xl p-20 text-center border border-slate-200 shadow-sm"><p className="text-slate-400 font-bold text-sm">A tabela está vazia. Gere os jogos acima.</p></div> : 
+                        <div className="grid md:grid-cols-2 gap-6">
+                            {jogos.map((j) => (
+                                <GameCard key={j.id} jogo={j} onUpdate={atualizarJogo} busy={loading} pin={pin} />
+                            ))}
+                        </div>
+                    }
+                </div>
 
-            <select className="p-3 rounded-xl border bg-slate-50 font-bold" value={sorteioDias} onChange={(e) => setSorteioDias(e.target.value)}>
-              <option value="SAB_DOM">Sábado + Domingo</option>
-              <option value="SAB">Somente Sábado</option>
-              <option value="DOM">Somente Domingo</option>
-            </select>
-
-            <label className="flex items-center gap-2 p-3 rounded-xl border bg-slate-50 font-bold text-slate-700">
-              <input type="checkbox" checked={sorteioLimpar} onChange={(e) => setSorteioLimpar(e.target.checked)} />
-              Limpar jogos existentes
-            </label>
-
-            <button onClick={gerarSorteio} disabled={loading} className="bg-blue-600 text-white font-black rounded-xl px-4 py-3 uppercase text-xs hover:bg-blue-700 disabled:opacity-60">
-              GERAR JOGOS (SORTEIO)
-            </button>
-          </div>
-
-          <p className="text-[10px] font-bold uppercase text-slate-400 mt-3">
-            Se deixar a data base vazia, você pode definir datas depois.
-          </p>
-        </div>
-
-        {/* ✅ Horários automáticos */}
-        <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 mb-8">
-          <h2 className="font-black uppercase text-slate-900">Horários automáticos</h2>
-          <p className="text-slate-500 text-sm font-bold mt-1">
-            Informe o início do 1º jogo + duração + intervalo. O sistema calcula e salva os horários de todos os jogos.
-          </p>
-
-          <div className="grid md:grid-cols-5 gap-3 mt-4">
-            <input
-              className="p-3 rounded-xl border bg-slate-50 font-bold"
-              placeholder="Data (opcional) AAAA-MM-DD"
-              value={horData}
-              onChange={(e) => setHorData(e.target.value)}
-            />
-            <input
-              className="p-3 rounded-xl border bg-slate-50 font-bold"
-              placeholder="Início (HH:MM)"
-              value={horInicio}
-              onChange={(e) => setHorInicio(e.target.value)}
-            />
-            <input
-              type="number"
-              className="p-3 rounded-xl border bg-slate-50 font-bold"
-              placeholder="Duração (min)"
-              value={horDuracao}
-              onChange={(e) => setHorDuracao(e.target.value)}
-            />
-            <input
-              type="number"
-              className="p-3 rounded-xl border bg-slate-50 font-bold"
-              placeholder="Intervalo (min)"
-              value={horIntervalo}
-              onChange={(e) => setHorIntervalo(e.target.value)}
-            />
-            <button
-              onClick={gerarHorarios}
-              disabled={loading}
-              className="bg-slate-900 text-white font-black rounded-xl px-4 py-3 uppercase text-xs hover:bg-blue-600 disabled:opacity-60"
-            >
-              GERAR HORÁRIOS
-            </button>
-          </div>
-
-          <p className="text-[10px] font-bold uppercase text-slate-400 mt-3">
-            Se preencher a data, ele atualiza somente os jogos daquele dia.
-          </p>
-        </div>
-
-        {/* Criar jogo manual */}
-        <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 mb-8">
-          <h2 className="font-black uppercase text-slate-900">Criar jogo (manual)</h2>
-          <div className="grid md:grid-cols-6 gap-3 mt-4">
-            <input className="p-3 rounded-xl border bg-slate-50 font-bold" placeholder="Rodada" value={novoJogo.rodada} onChange={(e) => setNovoJogo({ ...novoJogo, rodada: e.target.value })} />
-            <input className="p-3 rounded-xl border bg-slate-50 font-bold" placeholder="Data (YYYY-MM-DD)" value={novoJogo.data_jogo} onChange={(e) => setNovoJogo({ ...novoJogo, data_jogo: e.target.value })} />
-
-            <select className="p-3 rounded-xl border bg-slate-50 font-bold md:col-span-2" value={novoJogo.equipe_a_id} onChange={(e) => setNovoJogo({ ...novoJogo, equipe_a_id: e.target.value })}>
-              <option value="">Time A</option>
-              {equipesOptions.map((t) => (
-                <option key={t.id} value={t.id}>{t.nome}</option>
-              ))}
-            </select>
-
-            <select className="p-3 rounded-xl border bg-slate-50 font-bold md:col-span-2" value={novoJogo.equipe_b_id} onChange={(e) => setNovoJogo({ ...novoJogo, equipe_b_id: e.target.value })}>
-              <option value="">Time B</option>
-              {equipesOptions.map((t) => (
-                <option key={t.id} value={t.id}>{t.nome}</option>
-              ))}
-            </select>
-
-            <button onClick={criarJogo} className="bg-blue-600 text-white font-black rounded-xl px-4 py-3 uppercase text-xs flex items-center justify-center gap-2 hover:bg-blue-700 md:col-span-6">
-              <PlusCircle size={16} /> Adicionar jogo à etapa selecionada
-            </button>
-          </div>
-        </div>
-
-        {/* Lista jogos */}
-        <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="p-6 border-b border-slate-200 flex items-center justify-between">
-            <h2 className="font-black uppercase text-slate-900">Jogos da etapa</h2>
-            {!etapaId && <span className="text-slate-400 font-bold text-xs uppercase">Selecione uma etapa</span>}
-          </div>
-
-          {!etapaId ? (
-            <div className="p-10 text-center text-slate-400 font-bold">Selecione uma etapa para ver os jogos.</div>
-          ) : jogos.length === 0 ? (
-            <div className="p-10 text-center text-slate-400 font-bold">Nenhum jogo cadastrado.</div>
-          ) : (
-            <div className="divide-y">
-              {jogos.map((j) => (
-                <JogoRow
-                  key={j.id}
-                  jogo={j}
-                  onSave={salvarPlacar}
-                  onFinalize={finalizarJogo}
-                  busy={loading}
-                  pin={pin}
-                />
-              ))}
+                {/* MANUAL ADD */}
+                <div className="bg-slate-100 rounded-3xl p-6 border border-slate-200 opacity-60 hover:opacity-100 transition-all">
+                    <p className="text-[10px] font-black uppercase text-slate-400 mb-3 tracking-widest">Adição Manual (Backup)</p>
+                    <div className="flex gap-3 items-center flex-wrap">
+                        <select className="p-3 rounded-xl border border-slate-200 text-xs font-bold uppercase bg-white outline-none" value={novoJogo.tipo_jogo} onChange={e => setNovoJogo({...novoJogo, tipo_jogo: e.target.value})}>
+                            <option value="GRUPO">Fase de Grupos</option>
+                            <option value="FINAL">Grande Final</option>
+                            <option value="DISPUTA_3">Disputa 3º Lugar</option>
+                        </select>
+                        <input className="p-3 rounded-xl border border-slate-200 text-xs w-24 bg-white font-bold outline-none" placeholder="Rodada" value={novoJogo.rodada} onChange={e => setNovoJogo({...novoJogo, rodada: e.target.value})} />
+                        <select className="flex-1 p-3 rounded-xl border border-slate-200 text-xs bg-white font-bold outline-none" value={novoJogo.equipe_a_id} onChange={e => setNovoJogo({...novoJogo, equipe_a_id: e.target.value})}>
+                            <option value="">Time A</option>
+                            {todosTimes.map(t => <option key={t.id} value={t.id}>{t.nome_equipe}</option>)}
+                        </select>
+                        <span className="font-black text-slate-300">VS</span>
+                        <select className="flex-1 p-3 rounded-xl border border-slate-200 text-xs bg-white font-bold outline-none" value={novoJogo.equipe_b_id} onChange={e => setNovoJogo({...novoJogo, equipe_b_id: e.target.value})}>
+                            <option value="">Time B</option>
+                            {todosTimes.map(t => <option key={t.id} value={t.id}>{t.nome_equipe}</option>)}
+                        </select>
+                        <button onClick={criarJogoManual} disabled={loading} className="bg-slate-900 text-white px-6 py-3 rounded-xl font-black text-xs hover:bg-black uppercase flex items-center gap-2">
+                            {loading ? <Loader2 className="animate-spin" size={14}/> : <PlusCircle size={14}/>} Adicionar
+                        </button>
+                    </div>
+                </div>
             </div>
-          )}
-        </div>
+        )}
       </div>
     </main>
   )
 }
 
-function JogoRow({ jogo, onSave, onFinalize, busy, pin }) {
+function GameCard({ jogo, onUpdate, busy, pin }) {
   const [ga, setGa] = useState(jogo.gols_a ?? '')
   const [gb, setGb] = useState(jogo.gols_b ?? '')
+  const [pa, setPa] = useState(jogo.penaltis_a ?? '')
+  const [pb, setPb] = useState(jogo.penaltis_b ?? '')
+  const [showPenalties, setShowPenalties] = useState(jogo.penaltis_a !== null || jogo.penaltis_b !== null)
+
+  const [editData, setEditData] = useState(jogo.data_jogo ?? '')
+  const [editHora, setEditHora] = useState(jogo.horario ? String(jogo.horario).slice(0,5) : '')
+  const [editJuiz, setEditJuiz] = useState(jogo.arbitro ?? '')
+  const [isEditing, setIsEditing] = useState(false)
+
   const [open, setOpen] = useState(false)
-
   const [eventos, setEventos] = useState([])
-  const [loadingEv, setLoadingEv] = useState(false)
-
   const [atletasA, setAtletasA] = useState([])
   const [atletasB, setAtletasB] = useState([])
+  
+  const [novo, setNovo] = useState({ tipo: 'GOL', equipe: 'A', atleta_id: '', minuto: '', camisa_no_jogo: '', observacao: '' })
 
-  const [novo, setNovo] = useState({
-    tipo: 'GOL',
-    equipe: 'A',
-    atleta_id: '',
-    minuto: '',
-    tempo: '1T',
-    camisa_no_jogo: '',
-    observacao: '',
-  })
+  const nomeA = jogo?.equipeA?.nome_equipe || 'Equipe A'
+  const nomeB = jogo?.equipeB?.nome_equipe || 'Equipe B'
+  const dataFormatada = jogo.data_jogo ? new Date(jogo.data_jogo + 'T00:00:00').toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit'}) : '';
+  const horaFormatada = jogo.horario ? String(jogo.horario).slice(0, 5) : '--:--';
 
-  const nomeA = jogo?.equipeA?.nome_equipe || `Equipe ${jogo.equipe_a_id}`
-  const nomeB = jogo?.equipeB?.nome_equipe || `Equipe ${jogo.equipe_b_id}`
+  let statusBadge = "bg-slate-100 text-slate-500", statusText = "Agendado"
+  if (jogo.status === 'EM_ANDAMENTO') { statusBadge = "bg-green-100 text-green-700 animate-pulse border-green-200 shadow-sm"; statusText = "Ao Vivo ●" }
+  else if (jogo.status === 'FINALIZADO') { statusBadge = "bg-slate-800 text-white shadow-sm"; statusText = "Finalizado" }
 
-  const atletaMap = useMemo(() => {
-    const m = new Map()
-    ;[...(atletasA || []), ...(atletasB || [])].forEach((a) => m.set(a.id, a))
-    return m
-  }, [atletasA, atletasB])
+  const labelTipo = jogo.tipo_jogo === 'FINAL' ? '🏆 FINAL' : jogo.tipo_jogo === 'DISPUTA_3' ? '🥉 3º LUGAR' : `RODADA ${jogo.rodada}`;
 
   async function loadSumula() {
-    setLoadingEv(true)
     try {
-      const [evRes, ra, rb] = await Promise.all([
-        fetch(`/api/admin/jogos/eventos?jogo_id=${jogo.id}`, { headers: { 'x-admin-pin': pin } }),
-        fetch(`/api/admin/atletas?equipe_id=${jogo.equipe_a_id}`, { headers: { 'x-admin-pin': pin } }),
-        fetch(`/api/admin/atletas?equipe_id=${jogo.equipe_b_id}`, { headers: { 'x-admin-pin': pin } }),
+      const [ev, ra, rb] = await Promise.all([
+        fetch(`/api/admin/jogos/eventos?jogo_id=${jogo.id}`, { headers: { 'x-admin-pin': pin } }).then(r=>r.json()),
+        fetch(`/api/admin/atletas?equipe_id=${jogo.equipe_a_id}`, { headers: { 'x-admin-pin': pin } }).then(r=>r.json()),
+        fetch(`/api/admin/atletas?equipe_id=${jogo.equipe_b_id}`, { headers: { 'x-admin-pin': pin } }).then(r=>r.json()),
       ])
-
-      const ev = await safeJson(evRes)
-      const aA = await safeJson(ra)
-      const aB = await safeJson(rb)
-
-      if (!evRes.ok) alert(ev?.error || 'Erro ao carregar eventos')
-      if (!ra.ok) alert(aA?.error || 'Erro ao carregar atletas A')
-      if (!rb.ok) alert(aB?.error || 'Erro ao carregar atletas B')
-
-      setEventos(Array.isArray(ev) ? ev : [])
-      setAtletasA(Array.isArray(aA) ? aA : [])
-      setAtletasB(Array.isArray(aB) ? aB : [])
-    } finally {
-      setLoadingEv(false)
-    }
+      setEventos(ev || []); setAtletasA(ra || []); setAtletasB(rb || [])
+    } catch(e){}
   }
 
-  async function toggleOpen() {
-    const next = !open
-    setOpen(next)
-    if (next) await loadSumula()
-  }
+  async function toggleOpen() { if (!open) await loadSumula(); setOpen(!open); }
 
   async function addEvento() {
     const equipe_id = novo.equipe === 'A' ? jogo.equipe_a_id : jogo.equipe_b_id
     const atleta_id = novo.atleta_id ? Number(novo.atleta_id) : null
-
-    setLoadingEv(true)
-    try {
-      const res = await fetch('/api/admin/jogos/eventos', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-admin-pin': pin },
-        body: JSON.stringify({
-          jogo_id: jogo.id,
-          equipe_id,
-          atleta_id,
-          tipo: novo.tipo,
-          minuto: novo.minuto ? Number(novo.minuto) : null,
-          tempo: novo.tempo,
-          camisa_no_jogo: novo.camisa_no_jogo ? Number(novo.camisa_no_jogo) : null,
-          observacao: novo.observacao || null,
-        }),
-      })
-      const data = await safeJson(res)
-      if (!res.ok) return alert(data?.error || 'Erro ao salvar evento')
-
-      await loadSumula()
-      setNovo({ ...novo, atleta_id: '', minuto: '', camisa_no_jogo: '', observacao: '' })
-    } finally {
-      setLoadingEv(false)
-    }
+    await fetch('/api/admin/jogos/eventos', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-pin': pin }, body: JSON.stringify({ jogo_id: jogo.id, equipe_id, atleta_id, ...novo }) })
+    await loadSumula(); setNovo({...novo, observacao: ''});
   }
 
-  async function delEvento(id) {
-    if (!confirm('Excluir este evento?')) return
-    setLoadingEv(true)
-    try {
-      const res = await fetch(`/api/admin/jogos/eventos?id=${id}`, {
-        method: 'DELETE',
-        headers: { 'x-admin-pin': pin },
-      })
-      const data = await safeJson(res)
-      if (!res.ok) return alert(data?.error || 'Erro ao excluir')
-      await loadSumula()
-    } finally {
-      setLoadingEv(false)
-    }
-  }
+  async function delEvento(id) { if (confirm('Excluir?')) { await fetch(`/api/admin/jogos/eventos?id=${id}`, { method: 'DELETE', headers: { 'x-admin-pin': pin } }); await loadSumula(); } }
 
-  const elenco = novo.equipe === 'A' ? atletasA : atletasB
+  function saveInfo() { onUpdate({ action: 'update_info', id: jogo.id, data_jogo: editData, horario: editHora, arbitro: editJuiz }); setIsEditing(false); }
+
+  function saveScore() {
+      const payload = { 
+          action: 'set_score', id: jogo.id, gols_a: ga, gols_b: gb,
+          penaltis_a: showPenalties && pa !== '' ? pa : null,
+          penaltis_b: showPenalties && pb !== '' ? pb : null
+      }
+      onUpdate(payload)
+  }
 
   function renderEvento(ev) {
-    const teamName = ev.equipe_id === jogo.equipe_a_id ? nomeA : nomeB
-    const atleta = ev.atleta_id ? atletaMap.get(ev.atleta_id) : null
-    const camisa = ev.camisa_no_jogo ?? atleta?.numero_camisa ?? '-'
-    const atletaTxt = atleta ? `#${camisa} ${atleta.nome}` : `#${camisa} —`
-    const when = `${ev.minuto ? `${ev.minuto}' ` : ''}${ev.tempo ? `(${ev.tempo})` : ''}`.trim()
-    return `${ev.tipo} ${when ? `• ${when}` : ''} • ${teamName} • ${atletaTxt}`
+      const nomeTime = ev.equipe_id === jogo.equipe_a_id ? nomeA : nomeB
+      const camisa = ev.camisa_no_jogo ? ` (#${ev.camisa_no_jogo})` : ''
+      const min = ev.minuto ? `${ev.minuto}' ` : ''
+      const obs = ev.observacao ? ` - ${ev.observacao}` : ''
+      return `${min}${ev.tipo} • ${nomeTime}${camisa}${obs}`
   }
 
-  const hora = jogo.hora_inicio ? String(jogo.hora_inicio).slice(0, 5) : ''
-
   return (
-    <div className="p-6">
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <p className="text-[10px] uppercase tracking-widest text-slate-400 font-black">
-            Rodada {jogo.rodada ?? '-'} • {jogo.data_jogo ?? 'Data a definir'}{hora ? ` • ${hora}` : ''}
-          </p>
-          <p className="text-slate-900 font-black text-lg">
-            {nomeA} <span className="text-slate-400">vs</span> {nomeB}
-          </p>
-          <p className="text-xs font-bold text-slate-500">Jogo ID: {jogo.id}</p>
-        </div>
+    <div className={`rounded-[2rem] border transition-all shadow-sm hover:shadow-lg ${jogo.status === 'FINALIZADO' ? 'bg-slate-50 border-slate-200' : 'bg-white border-slate-200'}`}>
+      <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 rounded-t-[2rem]">
+          <div className="flex items-center gap-3">
+              <span className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase border ${statusBadge}`}>{statusText}</span>
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wide">{labelTipo}</span>
+          </div>
+          <div className="flex items-center gap-2">
+              {isEditing ? (
+                  <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200 shadow-lg absolute right-12 z-10">
+                    <input className="border rounded-lg p-2 text-xs w-24 outline-none focus:border-blue-500 font-bold" type="text" placeholder="Juiz" value={editJuiz} onChange={e=>setEditJuiz(e.target.value)} />
+                    <input className="border rounded-lg p-2 text-xs w-28 outline-none focus:border-blue-500 font-bold" type="date" value={editData} onChange={e=>setEditData(e.target.value)} />
+                    <input className="border rounded-lg p-2 text-xs w-20 outline-none focus:border-blue-500 font-bold" type="time" value={editHora} onChange={e=>setEditHora(e.target.value)} />
+                    <button onClick={saveInfo} className="bg-blue-600 text-white p-2 rounded-lg hover:bg-blue-700 shadow-md"><CheckCircle size={14}/></button>
+                  </div>
+              ) : (
+                  <div className="flex items-center gap-3 group cursor-pointer hover:bg-slate-100 px-3 py-2 rounded-xl transition-all" onClick={() => setIsEditing(true)}>
+                      {jogo.arbitro && <span className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1"><User size={10}/> {jogo.arbitro}</span>}
+                      <span className="text-xs font-bold text-slate-600 flex items-center gap-1"><Calendar size={12} className="text-blue-500"/> {dataFormatada || '--/--'}</span>
+                      <span className="text-xs font-bold text-slate-600 flex items-center gap-1"><Clock size={12} className="text-blue-500"/> {horaFormatada}</span>
+                      <Edit3 size={12} className="text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity"/>
+                  </div>
+              )}
+          </div>
+      </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <input className="w-16 p-3 rounded-xl border bg-slate-50 font-black text-center" value={ga} onChange={(e) => setGa(e.target.value)} placeholder="0" />
-          <span className="font-black text-slate-400">x</span>
-          <input className="w-16 p-3 rounded-xl border bg-slate-50 font-black text-center" value={gb} onChange={(e) => setGb(e.target.value)} placeholder="0" />
+      <div className="p-8 relative">
+          <button onClick={() => setShowPenalties(!showPenalties)} className={`absolute top-2 right-2 text-[10px] font-black px-2 py-1 rounded uppercase border transition-colors ${showPenalties ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-300 border-slate-200 hover:text-slate-500'}`}>Pênaltis</button>
 
-          <button disabled={busy} onClick={() => onSave(jogo.id, Number(ga || 0), Number(gb || 0))} className="bg-slate-900 text-white font-black rounded-xl px-4 py-3 uppercase text-xs flex items-center gap-2 hover:bg-blue-600 disabled:opacity-60">
-            <Save size={16} /> Salvar
-          </button>
+          <div className="flex justify-between items-center mb-8">
+              <p className="font-black text-slate-800 text-center w-1/3 text-sm md:text-lg leading-tight">{nomeA}</p>
+              <div className="text-center w-1/3 flex flex-col items-center justify-center gap-2">
+                  <div className="flex items-center gap-3">
+                    <input className="w-14 h-14 text-center text-3xl font-black bg-slate-50 rounded-2xl border border-slate-200 focus:border-blue-500 outline-none text-slate-900" value={ga} onChange={e=>setGa(e.target.value)} placeholder="0"/>
+                    <span className="text-slate-300 font-black text-xl">:</span>
+                    <input className="w-14 h-14 text-center text-3xl font-black bg-slate-50 rounded-2xl border border-slate-200 focus:border-blue-500 outline-none text-slate-900" value={gb} onChange={e=>setGb(e.target.value)} placeholder="0"/>
+                  </div>
+                  {showPenalties && (
+                      <div className="flex items-center gap-2 animate-in fade-in slide-in-from-top-1">
+                          <input className="w-8 h-8 text-center text-xs font-bold bg-slate-100 rounded-lg border border-slate-300 focus:border-blue-500 outline-none text-slate-600" value={pa} onChange={e=>setPa(e.target.value)} placeholder="P" />
+                          <span className="text-[10px] font-bold text-slate-400 uppercase">Pênaltis</span>
+                          <input className="w-8 h-8 text-center text-xs font-bold bg-slate-100 rounded-lg border border-slate-300 focus:border-blue-500 outline-none text-slate-600" value={pb} onChange={e=>setPb(e.target.value)} placeholder="P" />
+                      </div>
+                  )}
+              </div>
+              <p className="font-black text-slate-800 text-center w-1/3 text-sm md:text-lg leading-tight">{nomeB}</p>
+          </div>
 
-          {!jogo.finalizado ? (
-            <button disabled={busy} onClick={() => onFinalize(jogo.id, true)} className="bg-green-600 text-white font-black rounded-xl px-4 py-3 uppercase text-xs flex items-center gap-2 hover:bg-green-700 disabled:opacity-60">
-              <CheckCircle size={16} /> Finalizar
-            </button>
-          ) : (
-            <button disabled={busy} onClick={() => onFinalize(jogo.id, false)} className="bg-red-600 text-white font-black rounded-xl px-4 py-3 uppercase text-xs flex items-center gap-2 hover:bg-red-700 disabled:opacity-60">
-              <XCircle size={16} /> Reabrir
-            </button>
-          )}
+          <div className="flex justify-center gap-3">
+              <button onClick={saveScore} className="bg-slate-100 p-3 rounded-xl text-slate-600 hover:bg-slate-200 hover:text-blue-600 transition-colors" title="Salvar Placar"><Save size={20}/></button>
+              {jogo.status === 'EM_BREVE' && <button onClick={() => onUpdate({ action: 'set_status', id: jogo.id, status: 'EM_ANDAMENTO' })} className="bg-green-600 text-white px-6 py-2 rounded-xl font-black text-xs uppercase flex items-center gap-2 hover:bg-green-500 shadow-lg shadow-green-600/20 transition-all hover:scale-105"><PlayCircle size={18}/> Iniciar</button>}
+              
+              {/* BOTÃO REABRIR (NOVO) */}
+              {jogo.status === 'FINALIZADO' && (
+                  <div className="flex gap-2">
+                      <span className="bg-slate-800 text-white px-6 py-2 rounded-xl font-black text-xs uppercase flex items-center gap-2 cursor-default"><StopCircle size={18}/> Encerrado</span>
+                      <button onClick={() => onUpdate({ action: 'set_status', id: jogo.id, status: 'EM_ANDAMENTO' })} className="bg-blue-100 text-blue-600 px-4 py-2 rounded-xl font-bold text-xs uppercase hover:bg-blue-200 transition-colors" title="Reabrir Partida"><RotateCcw size={18}/></button>
+                  </div>
+              )}
 
-          <button onClick={toggleOpen} className="bg-blue-50 text-blue-700 border border-blue-200 font-black rounded-xl px-4 py-3 uppercase text-xs flex items-center gap-2 hover:bg-blue-100">
-            <ClipboardList size={16} /> Súmula
-          </button>
-        </div>
+              {jogo.status === 'EM_ANDAMENTO' && <button onClick={() => onUpdate({ action: 'set_status', id: jogo.id, status: 'FINALIZADO' })} className="bg-slate-900 text-white px-6 py-2 rounded-xl font-black text-xs uppercase flex items-center gap-2 hover:bg-black shadow-lg shadow-slate-900/20 transition-all hover:scale-105"><StopCircle size={18}/> Encerrar</button>}
+              <button onClick={toggleOpen} className={`p-3 rounded-xl border transition-all ${open ? 'bg-blue-50 border-blue-200 text-blue-600' : 'bg-white border-slate-200 text-slate-400 hover:bg-slate-50'}`}><ClipboardList size={20}/></button>
+          </div>
       </div>
 
       {open && (
-        <div className="mt-6 bg-slate-50 border border-slate-200 rounded-2xl p-5">
-          <div className="flex items-center justify-between mb-4">
-            <p className="font-black uppercase text-slate-900">Eventos (Gols e Cartões)</p>
-            {loadingEv && <span className="text-xs font-bold text-slate-400">carregando…</span>}
-          </div>
-
-          <div className="grid md:grid-cols-7 gap-3">
-            <select className="p-3 rounded-xl border bg-white font-bold" value={novo.tipo} onChange={(e) => setNovo({ ...novo, tipo: e.target.value })}>
-              <option value="GOL">GOL</option>
-              <option value="AMARELO">AMARELO</option>
-              <option value="VERMELHO">VERMELHO</option>
-            </select>
-
-            <select className="p-3 rounded-xl border bg-white font-bold" value={novo.equipe} onChange={(e) => setNovo({ ...novo, equipe: e.target.value, atleta_id: '' })}>
-              <option value="A">{nomeA}</option>
-              <option value="B">{nomeB}</option>
-            </select>
-
-            <select className="p-3 rounded-xl border bg-white font-bold md:col-span-2" value={novo.atleta_id} onChange={(e) => setNovo({ ...novo, atleta_id: e.target.value })}>
-              <option value="">Atleta (camisa + nome)</option>
-              {Array.isArray(elenco) && elenco.map((a) => (
-                <option key={a.id} value={a.id}>#{a.numero_camisa ?? '-'} • {a.nome}</option>
-              ))}
-            </select>
-
-            <input className="p-3 rounded-xl border bg-white font-bold" placeholder="Min" value={novo.minuto} onChange={(e) => setNovo({ ...novo, minuto: e.target.value })} />
-            <input className="p-3 rounded-xl border bg-white font-bold" placeholder="Camisa" value={novo.camisa_no_jogo} onChange={(e) => setNovo({ ...novo, camisa_no_jogo: e.target.value })} />
-            <select className="p-3 rounded-xl border bg-white font-bold" value={novo.tempo} onChange={(e) => setNovo({ ...novo, tempo: e.target.value })}>
-              <option value="1T">1T</option>
-              <option value="2T">2T</option>
-              <option value="PR">PR</option>
-              <option value="SEG">SEG</option>
-            </select>
-
-            <input className="p-3 rounded-xl border bg-white font-bold md:col-span-6" placeholder="Observação (opcional)" value={novo.observacao} onChange={(e) => setNovo({ ...novo, observacao: e.target.value })} />
-
-            <button onClick={addEvento} className="bg-slate-900 text-white font-black rounded-xl px-4 py-3 uppercase text-xs hover:bg-blue-600">
-              + Adicionar
-            </button>
-          </div>
-
-          <div className="mt-5 space-y-2">
-            {eventos.length === 0 ? (
-              <p className="text-slate-400 font-bold text-sm">Nenhum evento lançado.</p>
-            ) : (
-              eventos.map((ev) => (
-                <div key={ev.id} className="bg-white border border-slate-200 rounded-xl p-3 flex items-center justify-between">
-                  <div className="text-sm font-bold text-slate-700">
-                    {renderEvento(ev)}
-                    {ev.observacao ? <span className="text-slate-400"> — {ev.observacao}</span> : null}
-                  </div>
-                  <button onClick={() => delEvento(ev.id)} className="p-2 bg-red-100 text-red-600 rounded-lg">
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-              ))
-            )}
-          </div>
-
-          <p className="mt-4 text-[10px] font-bold uppercase text-slate-400">
-            Gols lançados aqui atualizam o placar automaticamente (trigger). Depois use “Horários automáticos” para montar a agenda do dia.
-          </p>
+        <div className="bg-slate-50 border-t border-slate-100 p-6 rounded-b-[2rem] animate-in fade-in slide-in-from-top-4">
+            <div className="grid grid-cols-7 gap-3 mb-4">
+                <select className="col-span-2 p-3 rounded-xl border border-slate-200 text-xs font-bold bg-white outline-none focus:border-blue-500" value={novo.tipo} onChange={e=>setNovo({...novo, tipo: e.target.value})}><option value="GOL">⚽ GOL</option><option value="AMARELO">🟨 AMARELO</option><option value="VERMELHO">🟥 VERMELHO</option></select>
+                <select className="col-span-2 p-3 rounded-xl border border-slate-200 text-xs font-bold bg-white outline-none focus:border-blue-500" value={novo.equipe} onChange={e=>setNovo({...novo, equipe: e.target.value, atleta_id: ''})}><option value="A">{nomeA}</option><option value="B">{nomeB}</option></select>
+                <select className="col-span-3 p-3 rounded-xl border border-slate-200 text-xs font-bold bg-white outline-none focus:border-blue-500" value={novo.atleta_id} onChange={e=>setNovo({...novo, atleta_id: e.target.value})}><option value="">Selecione Atleta...</option>{(novo.equipe === 'A' ? atletasA : atletasB).map(a=><option key={a.id} value={a.id}>{a.nome}</option>)}</select>
+                <input className="col-span-1 p-3 rounded-xl border border-slate-200 text-xs font-bold outline-none focus:border-blue-500" placeholder="Min" value={novo.minuto} onChange={e=>setNovo({...novo, minuto: e.target.value})} />
+                <input className="col-span-2 p-3 rounded-xl border border-slate-200 text-xs font-bold outline-none focus:border-blue-500" placeholder="Camisa" value={novo.camisa_no_jogo} onChange={e=>setNovo({...novo, camisa_no_jogo: e.target.value})} />
+                <input className="col-span-2 p-3 rounded-xl border border-slate-200 text-xs font-bold outline-none focus:border-blue-500" placeholder="Obs..." value={novo.observacao} onChange={e=>setNovo({...novo, observacao: e.target.value})} />
+                <button onClick={addEvento} className="col-span-2 bg-blue-600 text-white font-black rounded-xl py-2 text-xs uppercase hover:bg-blue-500 shadow-md transition-transform active:scale-95">Adicionar</button>
+            </div>
+            <div className="space-y-2">
+                {eventos.map(ev => (
+                    <div key={ev.id} className="flex justify-between items-center bg-white p-3 rounded-xl border border-slate-100 text-xs font-bold text-slate-600 shadow-sm hover:border-slate-200 transition-colors">
+                        <span>{renderEvento(ev)}</span>
+                        <button onClick={()=>delEvento(ev.id)} className="text-red-300 hover:text-red-500 transition-colors"><Trash2 size={14}/></button>
+                    </div>
+                ))}
+                {eventos.length === 0 && <p className="text-center text-slate-400 text-xs font-medium py-4">Nenhum evento registrado na súmula.</p>}
+            </div>
         </div>
       )}
     </div>
