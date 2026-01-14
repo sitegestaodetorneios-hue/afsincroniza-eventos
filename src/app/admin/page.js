@@ -5,7 +5,7 @@ import {
   Settings, LayoutDashboard, Users, Trash2, CheckCircle, Phone,
   Image as ImageIcon, AlignLeft, LogOut, ClipboardList, Loader2,
   AlertCircle, Save, Trophy, Type, Calendar, MapPin, DollarSign, FileText,
-  FileCheck
+  FileCheck, XCircle
 } from 'lucide-react'
 
 // --- FUNÇÕES AUXILIARES ---
@@ -38,18 +38,29 @@ export default function AdminPanel() {
   const [loading, setLoading] = useState(false)
   const [equipes, setEquipes] = useState([])
 
-  // Configuração Padrão
+  // Configuração Padrão Completa
   const defaultConfig = useMemo(() => ({
       id: 1,
+      // 1. Identidade
       nome_competicao: '', nome_empresa: '', logo_url: '', whatsapp: '',
+      
+      // 2. Hero (Capa)
       texto_topo: '', titulo_destaque: '', subtitulo: '', 
       imagem_fundo: '', titulo_card_hero: '', texto_card_hero: '',
       data_limite: '', valor_premio: '',
+      
+      // 3. Sobre
       slogan: '', texto_empresa: '', missao: '', valores: '',
+      
+      // 4. Modalidade Futsal
       status_futsal: 'EM_BREVE', titulo_futsal: '', desc_futsal: '', 
       local_futsal: '', inicio_futsal: '', vagas_futsal: 0,
+      
+      // 5. Modalidade Society
       status_society: 'EM_BREVE', titulo_society: '', desc_society: '', 
       local_society: '', inicio_society: '', vagas_society: 0,
+      
+      // 6. Rodapé
       texto_footer: '',
     }), []
   )
@@ -98,11 +109,12 @@ export default function AdminPanel() {
     } catch (e) { alert('Erro ao salvar.') } finally { setLoading(false) }
   }
 
-  // GERENCIAR (APROVAR PAGAMENTO, APROVAR DOC, EXCLUIR)
+  // GERENCIAR (APROVAR PAGAMENTO, APROVAR DOC, RECUSAR DOC, EXCLUIR)
   async function gerenciarEquipe(id, action) {
     let confirmMsg = 'Tem certeza?'
     if (action === 'delete') confirmMsg = 'Isso excluirá a equipe e todos os atletas. Continuar?'
     if (action === 'approve_doc') confirmMsg = 'Confirma que o documento está assinado e correto?'
+    if (action === 'reject_doc') confirmMsg = 'Isso apagará o documento atual e notificará como Pendente. Confirmar recusa?'
     
     if (!confirm(confirmMsg)) return
 
@@ -204,20 +216,24 @@ export default function AdminPanel() {
                             {/* COLUNA PAGAMENTO */}
                             <td className="p-6 text-center">{eq.pago ? <span className="inline-flex items-center gap-1.5 bg-green-100 text-green-700 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wide border border-green-200"><CheckCircle size={12}/> Confirmado</span> : <span className="inline-flex items-center gap-1.5 bg-yellow-50 text-yellow-700 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wide border border-yellow-100">Pendente</span>}</td>
                             
-                            {/* COLUNA DOCUMENTO - COM BOTÃO DE APROVAR */}
+                            {/* COLUNA DOCUMENTO - COM BOTÕES DE AÇÃO */}
                             <td className="p-6 text-center">
                                 {eq.termo_url ? (
                                     <div className="flex flex-col items-center gap-2">
                                         <a href={eq.termo_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 bg-blue-50 text-blue-700 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase hover:bg-blue-100 transition-colors border border-blue-200">
                                             <FileText size={14}/> Ver Termo
                                         </a>
-                                        {/* Lógica do Botão Validar Documento */}
+                                        
                                         {!eq.termo_assinado ? (
-                                            <button onClick={() => gerenciarEquipe(eq.id, 'approve_doc')} className="inline-flex items-center gap-1 bg-slate-900 text-white px-3 py-1 rounded-lg text-[10px] font-bold uppercase hover:bg-green-600 transition-colors shadow-sm">
-                                                <FileCheck size={12}/> Validar
-                                            </button>
+                                            <div className="flex gap-2">
+                                                <button onClick={() => gerenciarEquipe(eq.id, 'approve_doc')} className="bg-green-600 text-white p-2 rounded-lg hover:bg-green-700 shadow-sm transition-colors" title="Aprovar Documento"><CheckCircle size={16}/></button>
+                                                <button onClick={() => gerenciarEquipe(eq.id, 'reject_doc')} className="bg-red-500 text-white p-2 rounded-lg hover:bg-red-600 shadow-sm transition-colors" title="Recusar Documento (Apagar)"><XCircle size={16}/></button>
+                                            </div>
                                         ) : (
-                                            <span className="text-[9px] bg-green-100 text-green-700 px-2 py-0.5 rounded border border-green-200 font-bold uppercase flex items-center gap-1"><CheckCircle size={10}/> Doc OK</span>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-[9px] bg-green-100 text-green-700 px-2 py-0.5 rounded border border-green-200 font-bold uppercase flex items-center gap-1"><CheckCircle size={10}/> Doc OK</span>
+                                                <button onClick={() => gerenciarEquipe(eq.id, 'reject_doc')} className="text-red-300 hover:text-red-500 p-1" title="Invalidar Documento"><Trash2 size={12}/></button>
+                                            </div>
                                         )}
                                     </div>
                                 ) : (
@@ -225,17 +241,10 @@ export default function AdminPanel() {
                                 )}
                             </td>
 
-                            {/* AÇÕES (PAGAMENTO E EXCLUSÃO) */}
                             <td className="p-6 text-right">
                                 <div className="flex justify-end gap-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
-                                    {!eq.pago && (
-                                        <button onClick={() => gerenciarEquipe(eq.id, 'approve')} className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-600 hover:text-white transition-all border border-blue-100" title="Aprovar Pagamento">
-                                            <DollarSign size={18} />
-                                        </button>
-                                    )}
-                                    <button onClick={() => gerenciarEquipe(eq.id, 'delete')} className="p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-600 hover:text-white transition-all border border-red-100" title="Excluir Equipe">
-                                        <Trash2 size={18} />
-                                    </button>
+                                    {!eq.pago && <button onClick={() => gerenciarEquipe(eq.id, 'approve')} className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-600 hover:text-white transition-all border border-blue-100" title="Aprovar Pagamento"><DollarSign size={18} /></button>}
+                                    <button onClick={() => gerenciarEquipe(eq.id, 'delete')} className="p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-600 hover:text-white transition-all border border-red-100" title="Excluir Equipe Totalmente"><Trash2 size={18} /></button>
                                 </div>
                             </td>
                         </tr>

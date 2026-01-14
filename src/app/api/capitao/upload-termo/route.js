@@ -3,9 +3,6 @@ import { NextResponse } from 'next/server'
 
 export const dynamic = 'force-dynamic'
 
-// Aumentar limite de tamanho do body se necessário (para Next.js configs)
-// Mas via de regra o padrão aceita alguns MBs.
-
 function supabaseAnon() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -25,17 +22,15 @@ export async function POST(request) {
     }
 
     // 1. Converter Base64 para Buffer
-    // O base64 vem como "data:image/png;base64,iVBOR..." precisamos tirar o prefixo
     const base64Data = arquivo_base64.split(';base64,').pop()
     const buffer = Buffer.from(base64Data, 'base64')
 
-    // 2. Gerar nome único para o arquivo
+    // 2. Gerar nome único
     const extensao = nome_arquivo.split('.').pop()
     const path = `termos/equipe_${equipe_id}_${Date.now()}.${extensao}`
 
-    // 3. Upload para o Supabase Storage (Bucket 'documentos')
-    // Certifique-se de ter criado o bucket 'documentos' no Supabase
-    const { data: uploadData, error: uploadError } = await supabase
+    // 3. Upload para o Supabase
+    const { error: uploadError } = await supabase
       .storage
       .from('documentos')
       .upload(path, buffer, {
@@ -57,11 +52,12 @@ export async function POST(request) {
     const termo_url = publicUrlData.publicUrl
 
     // 5. Atualizar Tabela Equipes
+    // AQUI ESTAVA O ERRO: mudamos termo_assinado para FALSE
     const { error: dbError } = await supabase
       .from('equipes')
       .update({ 
         termo_url: termo_url,
-        termo_assinado: true // Marca como enviado
+        termo_assinado: false // <--- CRUCIAL: Fica false (Pendente) até o Admin aprovar
       })
       .eq('id', equipe_id)
 

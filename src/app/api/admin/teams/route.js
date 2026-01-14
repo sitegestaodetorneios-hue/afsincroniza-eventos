@@ -3,17 +3,15 @@ import { NextResponse } from 'next/server'
 
 export const dynamic = 'force-dynamic'
 
-// 1. AUTENTICAÇÃO (Melhorada para aceitar ENV ou o PIN '2026' do frontend)
+// 1. AUTENTICAÇÃO
 function isAuthorized(request) {
   const pin = request.headers.get('x-admin-pin') || ''
-  // Aceita o PIN definido no ambiente OU o padrão '2026' usado no código do frontend
   return pin && (pin === process.env.ADMIN_PIN || pin === '2026')
 }
 
-// 2. CLIENTE ADMIN (Mantive sua lógica robusta de Service Role)
+// 2. CLIENTE ADMIN (Service Role)
 function supabaseAdmin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  // Tenta Service Role (poder total), se não tiver, usa a Anon Key
   const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
   if (!url || !serviceRole) {
@@ -25,7 +23,7 @@ function supabaseAdmin() {
   })
 }
 
-// 3. SANITIZAÇÃO (Mantive sua segurança para não vazar senhas)
+// 3. SANITIZAÇÃO
 function sanitizeTeam(row) {
   if (!row) return row
   const { senha, password, ...safe } = row
@@ -47,7 +45,6 @@ export async function GET(request) {
 
     if (error) throw error
 
-    // Sanitiza e retorna
     const safe = (data || []).map(sanitizeTeam)
     return NextResponse.json(safe)
 
@@ -78,16 +75,14 @@ export async function PUT(request) {
       return NextResponse.json({ error: 'Parâmetros obrigatórios: action, id' }, { status: 400 })
     }
 
-    // Lista de ações permitidas (Adicionado 'approve_doc')
-    if (!['delete', 'approve', 'approve_doc'].includes(action)) {
+    // LISTA DE AÇÕES PERMITIDAS (Incluindo reject_doc)
+    if (!['delete', 'approve', 'approve_doc', 'reject_doc'].includes(action)) {
       return NextResponse.json({ error: 'Ação inválida' }, { status: 400 })
     }
 
-    // 1. EXCLUIR EQUIPE (E seus atletas por segurança)
+    // 1. EXCLUIR EQUIPE
     if (action === 'delete') {
-      // Tenta apagar atletas primeiro para não dar erro de chave estrangeira
       await supabase.from('atletas').delete().eq('equipe_id', id)
-      
       const { error } = await supabase.from('equipes').delete().eq('id', id)
       if (error) throw error
     }
@@ -101,11 +96,24 @@ export async function PUT(request) {
       if (error) throw error
     }
 
-    // 3. APROVAR DOCUMENTO (Novo!)
+    // 3. APROVAR DOCUMENTO
     if (action === 'approve_doc') {
       const { error } = await supabase
         .from('equipes')
         .update({ termo_assinado: true })
+        .eq('id', id)
+      if (error) throw error
+    }
+
+    // 4. RECUSAR DOCUMENTO (Novo!)
+    if (action === 'reject_doc') {
+      // Reseta o status para false e limpa a URL para obrigar reenvio
+      const { error } = await supabase
+        .from('equipes')
+        .update({ 
+            termo_assinado: false,
+            termo_url: null 
+        })
         .eq('id', id)
       if (error) throw error
     }
