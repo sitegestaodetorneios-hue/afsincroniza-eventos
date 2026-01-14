@@ -1,9 +1,14 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { UserPlus, Users, ArrowLeft, Mail, Lock, FileText, Upload, CheckCircle, AlertTriangle, GraduationCap, Printer, RefreshCcw, Clock, XCircle } from 'lucide-react'
+import { 
+  UserPlus, Users, ArrowLeft, Mail, Lock, FileText, Upload, 
+  CheckCircle, AlertTriangle, GraduationCap, Printer, RefreshCcw, 
+  Clock, XCircle 
+} from 'lucide-react'
 import Link from 'next/link'
 
+// Função auxiliar para evitar erros de JSON
 async function safeJson(res) {
   try {
     return await res.json()
@@ -21,11 +26,11 @@ export default function PainelProfessor() {
   const [senhaBusca, setSenhaBusca] = useState('')
   const [loading, setLoading] = useState(false)
 
-  // Painel
+  // Dados do Painel
   const [equipe, setEquipe] = useState(null)
   const [atletas, setAtletas] = useState([])
 
-  // Novo atleta
+  // Formulário Novo Atleta
   const [novoAtleta, setNovoAtleta] = useState({ nome: '', rg: '', camisa: '' })
 
   // Upload Termo
@@ -33,18 +38,17 @@ export default function PainelProfessor() {
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef(null)
 
-  // --- LOGIN / ATUALIZAR DADOS ---
+  // --- 1. LOGIN E ATUALIZAÇÃO DE DADOS ---
   const acessarPainel = useCallback(async (isSilent = false) => {
-    // Se não tiver credenciais salvas (ex: auto-refresh sem login inicial), não faz nada
-    if (!isSilent && (!emailBusca || !senhaBusca)) return alert('Digite e-mail e senha!')
-    
-    // Se for refresh silencioso e não tivermos o ID da equipe, paramos
+    // Se for atualização silenciosa e não tivermos o ID da equipe, paramos
     if (isSilent && !equipe?.id) return
+    // Se for login normal e faltar dados, avisa
+    if (!isSilent && (!emailBusca || !senhaBusca)) return alert('Digite e-mail e senha!')
 
     if (!isSilent) setLoading(true)
     
     try {
-      // Nota: Usamos as credenciais salvas no state ou as do form
+      // Usa os dados salvos no state (login inicial) ou reusa para refresh
       const payload = {
         email: emailBusca.trim(),
         senha: senhaBusca,
@@ -64,7 +68,7 @@ export default function PainelProfessor() {
         return
       }
 
-      // ATUALIZA OS DADOS DA EQUIPE (Incluindo status do termo)
+      // ATUALIZA OS DADOS DA EQUIPE (Isso que faz o status mudar sozinho)
       setEquipe(data.equipe)
       
       if (!acessoLiberado) setAcessoLiberado(true)
@@ -79,18 +83,18 @@ export default function PainelProfessor() {
     if (!isSilent) setLoading(false)
   }, [emailBusca, senhaBusca, acessoLiberado, equipe?.id])
 
-  // --- AUTO REFRESH (A CADA 5 SEGUNDOS) ---
-  // Verifica mais rápido se o admin aprovou
+  // --- 2. AUTO REFRESH (A CADA 5 SEGUNDOS) ---
   useEffect(() => {
     let intervalo
     if (acessoLiberado) {
         intervalo = setInterval(() => {
-            acessarPainel(true) // Atualização silenciosa
+            acessarPainel(true) // Atualização silenciosa em background
         }, 5000)
     }
     return () => clearInterval(intervalo)
   }, [acessoLiberado, acessarPainel])
 
+  // --- 3. CARREGAR ATLETAS ---
   async function carregarAtletas(equipeId) {
     try {
       const res = await fetch(`/api/atletas?equipe_id=${equipeId}`)
@@ -102,6 +106,7 @@ export default function PainelProfessor() {
     }
   }
 
+  // --- 4. ADICIONAR ATLETA ---
   async function adicionarAtleta(e) {
     e.preventDefault()
     if (!novoAtleta.nome || !novoAtleta.rg) return alert('Preencha Nome e RG')
@@ -133,6 +138,7 @@ export default function PainelProfessor() {
     setLoading(false)
   }
 
+  // --- 5. GERAR PDF DO TERMO ---
   function gerarTermo() {
     if (atletas.length === 0) return alert("Cadastre os atletas antes de gerar o termo.")
     const printWindow = window.open('', '_blank')
@@ -185,7 +191,7 @@ export default function PainelProfessor() {
     printWindow.document.close()
   }
 
-  // --- UPLOAD ---
+  // --- 6. UPLOAD DO ARQUIVO ---
   async function handleFileUpload(e) {
     const file = e.target.files[0]
     if (!file) return
@@ -214,17 +220,17 @@ export default function PainelProfessor() {
             const data = await safeJson(res)
             
             if (res.ok) {
-                alert("Documento enviado! Aguarde a aprovação.")
+                alert("Documento enviado com sucesso! Aguarde a validação.")
                 setTermoFile(null)
                 
-                // ATUALIZAÇÃO IMEDIATA DO ESTADO LOCAL
-                // Isso garante que fique Amarelo na hora
+                // --- ATUALIZAÇÃO IMEDIATA DO VISUAL (AQUI ESTÁ A MÁGICA) ---
+                // Forçamos o termo_url a ter valor e termo_assinado false
                 setEquipe(prev => ({
                     ...prev,
-                    termo_url: data.url || 'temp_url', // Simula URL se não vier
-                    termo_assinado: false // Mantém pendente (Amarelo) até admin aprovar
+                    termo_url: data.url || 'http://temp-url.com', 
+                    termo_assinado: false
                 }))
-
+                
             } else {
                 alert(data.error || "Erro ao enviar.")
             }
@@ -236,6 +242,7 @@ export default function PainelProfessor() {
     }
   }
 
+  // --- TELA DE LOGIN ---
   if (!acessoLiberado) {
     return (
       <main className="min-h-screen bg-slate-950 flex items-center justify-center p-6 font-sans">
@@ -257,9 +264,9 @@ export default function PainelProfessor() {
     )
   }
 
-  // --- LÓGICA DE STATUS VISUAL ---
-  const docEnviado = !!equipe?.termo_url;
-  const docAprovado = equipe?.termo_assinado;
+  // --- LÓGICA DE STATUS (CORREÇÃO DE CORES) ---
+  const docEnviado = equipe?.termo_url && equipe.termo_url !== "";
+  const docAprovado = equipe?.termo_assinado === true;
 
   return (
     <main className="min-h-screen bg-slate-50 py-8 px-4 md:px-8 font-sans">
@@ -274,7 +281,7 @@ export default function PainelProfessor() {
                         <div className="bg-blue-600 px-3 py-1 rounded text-[10px] font-black uppercase tracking-widest shadow-sm">Professor</div>
                         <span className="text-slate-400 text-xs font-bold uppercase tracking-widest">{equipe?.modalidade}</span>
                     </div>
-                    <h1 className="text-3xl md:text-5xl font-black uppercase italic tracking-tighter text-white">{equipe?.nome_equipe || 'Equipe'}</h1>
+                    <h1 className="text-3xl md:text-5xl font-black uppercase italic tracking-tighter text-white">{equipe?.nome_equipe || 'Nome da Equipe'}</h1>
                     <p className="text-slate-300 font-medium mt-2 flex items-center gap-2"><GraduationCap size={18} className="text-yellow-500"/> Resp: {equipe?.nome_capitao}</p>
                 </div>
 
@@ -284,15 +291,15 @@ export default function PainelProfessor() {
                         <p className="text-3xl font-black text-white leading-none">{(Array.isArray(atletas) ? atletas.length : 0)}<span className="text-lg text-slate-400">/15</span></p>
                     </div>
                     
-                    {/* INDICADOR VISUAL (Barra colorida) */}
+                    {/* BARRA DE STATUS COLORIDA */}
                     <div className={`h-10 w-1 rounded-full ${docAprovado ? 'bg-green-500' : (docEnviado ? 'bg-yellow-500' : 'bg-red-500')}`}></div>
                     
                     <div>
                         <div className="flex items-center gap-2 mb-1">
                             <p className="text-[10px] font-black uppercase text-blue-300 tracking-widest">Documentação</p>
-                            <button onClick={() => acessarPainel(true)} className="text-slate-400 hover:text-white" title="Atualizar Status"><RefreshCcw size={10}/></button>
+                            <button onClick={() => acessarPainel(false)} className="text-slate-400 hover:text-white" title="Atualizar Status"><RefreshCcw size={10}/></button>
                         </div>
-                        {/* TEXTO DO STATUS */}
+                        {/* TEXTO DE STATUS */}
                         {docAprovado ? (
                             <p className="text-green-400 font-bold text-sm flex items-center gap-1"><CheckCircle size={14}/> Regular</p>
                         ) : docEnviado ? (
@@ -308,6 +315,7 @@ export default function PainelProfessor() {
         <div className="grid lg:grid-cols-3 gap-8">
           
           <div className="lg:col-span-1 space-y-8">
+            {/* CARD CADASTRO */}
             <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200">
               <h2 className="flex items-center gap-2 font-black uppercase text-xs tracking-widest text-slate-400 mb-6 border-b border-slate-100 pb-2"><UserPlus size={16} className="text-blue-600" /> Inscrever Novo Atleta</h2>
               <form onSubmit={adicionarAtleta} className="space-y-3">
@@ -320,6 +328,7 @@ export default function PainelProfessor() {
               </form>
             </div>
 
+            {/* CARD DOCUMENTAÇÃO */}
             <div className="bg-slate-800 p-6 rounded-[2rem] shadow-xl border border-slate-700 text-white">
                 <h2 className="flex items-center gap-2 font-black uppercase text-xs tracking-widest text-slate-400 mb-4 border-b border-slate-700 pb-2"><FileText size={16} className="text-yellow-400" /> Regularização</h2>
                 <div className="space-y-4">
@@ -328,26 +337,31 @@ export default function PainelProfessor() {
                         <button onClick={gerarTermo} className="w-full bg-white text-slate-900 font-bold py-3 rounded-xl hover:bg-slate-200 uppercase text-[10px] tracking-widest flex items-center justify-center gap-2 transition-colors"><Printer size={14}/> Imprimir Termo</button>
                     </div>
                     
-                    {/* ÁREA DE UPLOAD (Controlada pelos Status) */}
+                    {/* ÁREA DE UPLOAD INTELIGENTE */}
                     <div className="bg-white/5 p-4 rounded-xl border border-white/10">
                         <p className="text-xs text-slate-300 font-medium mb-3">2. Colete as assinaturas, tire uma foto legível e envie aqui.</p>
                         
                         <input type="file" accept="image/*,application/pdf" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
                         
+                        {/* Se não selecionou arquivo local... */}
                         {!termoFile ? (
                             docAprovado ? (
+                                // STATUS VERDE: APROVADO
                                 <div className="text-center p-3 bg-green-500/20 border border-green-500/50 rounded-xl">
                                     <p className="text-green-400 font-bold text-xs flex items-center justify-center gap-2"><CheckCircle size={16}/> Documentação Aceita</p>
                                 </div>
                             ) : docEnviado ? (
+                                // STATUS AMARELO: ENVIADO MAS NÃO APROVADO
                                 <div className="text-center p-3 bg-yellow-500/20 border border-yellow-500/50 rounded-xl space-y-2">
                                     <p className="text-yellow-400 font-bold text-xs flex items-center justify-center gap-2"><Clock size={16}/> Aguardando Análise</p>
-                                    <button onClick={() => fileInputRef.current?.click()} className="text-[10px] text-slate-400 hover:text-white underline">Corrigir Arquivo</button>
+                                    <button onClick={() => fileInputRef.current?.click()} className="text-[10px] text-slate-400 hover:text-white underline">Reenviar/Corrigir</button>
                                 </div>
                             ) : (
+                                // STATUS VERMELHO: PENDENTE
                                 <button onClick={() => fileInputRef.current?.click()} className="w-full border-2 border-dashed border-slate-600 text-slate-400 font-bold py-3 rounded-xl hover:border-blue-400 hover:text-blue-300 uppercase text-[10px] tracking-widest transition-colors flex items-center justify-center gap-2"><Upload size={14}/> Anexar Foto/PDF</button>
                             )
                         ) : (
+                            // ARQUIVO SELECIONADO LOCALMENTE (PRONTO PARA ENVIAR)
                             <div className="space-y-2 animate-in fade-in zoom-in">
                                 <div className="bg-green-900/30 p-2 rounded-lg text-xs truncate flex items-center gap-2 text-green-300 border border-green-900/50"><FileText size={14}/> {termoFile.name}</div>
                                 <div className="flex gap-2">
@@ -368,11 +382,7 @@ export default function PainelProfessor() {
             </div>
             <div className="space-y-3">
               {(Array.isArray(atletas) ? atletas : []).length === 0 ? (
-                <div className="text-center py-20 bg-white rounded-[2.5rem] border-2 border-dashed border-slate-200">
-                    <div className="bg-slate-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4"><Users size={32} className="text-slate-300"/></div>
-                    <p className="text-slate-400 font-bold text-sm">Nenhum atleta no elenco.</p>
-                    <p className="text-xs text-slate-400 mt-1">Use o formulário ao lado para começar a convocação.</p>
-                </div>
+                <div className="text-center py-20 bg-white rounded-[2.5rem] border-2 border-dashed border-slate-200"><div className="bg-slate-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4"><Users size={32} className="text-slate-300"/></div><p className="text-slate-400 font-bold text-sm">Nenhum atleta no elenco.</p></div>
               ) : (
                 <div className="grid md:grid-cols-2 gap-3">
                     {(Array.isArray(atletas) ? atletas : []).map((atleta) => (
