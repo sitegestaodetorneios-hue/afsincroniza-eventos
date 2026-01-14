@@ -18,7 +18,7 @@ async function safeJson(res) {
 
 export default function AdminJogos() {
   const [pin, setPin] = useState('')
-  const [authed, setAuthed] = useState(false)
+  const [authed, setAutenticado] = useState(false) // Corrigido nome para consistência
   const [loading, setLoading] = useState(false)
 
   // Dados
@@ -44,7 +44,7 @@ export default function AdminJogos() {
       rodada: '', data_jogo: '', equipe_a_id: '', equipe_b_id: '', tipo_jogo: 'GRUPO'
   })
 
-  function auth() { if (pin === '2026') { setAuthed(true) } else alert('PIN incorreto') }
+  function auth() { if (pin === '2026') { setAutenticado(true) } else alert('PIN incorreto') }
 
   // --- CARREGAMENTO ---
   async function loadAll() {
@@ -66,6 +66,7 @@ export default function AdminJogos() {
   useEffect(() => { if (authed) loadAll() }, [authed])
 
   async function selecionarEtapa(id) {
+    if (!id) return;
     setEtapaId(String(id))
     setLoading(true)
     try {
@@ -84,10 +85,17 @@ export default function AdminJogos() {
     if(!novaEtapa.titulo) return alert("Digite um nome para a etapa")
     setLoading(true)
     try {
-      await fetch('/api/admin/etapas', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-pin': pin }, body: JSON.stringify(novaEtapa) })
-      await loadAll()
+      const res = await fetch('/api/admin/etapas', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-pin': pin }, body: JSON.stringify(novaEtapa) })
+      const data = await safeJson(res)
+      
+      await loadAll() // Recarrega lista de etapas
+      
       setNovaEtapa({...novaEtapa, titulo: ''})
-      alert('Etapa criada!')
+      alert('Etapa criada! Selecione-a na lista abaixo para começar a gerenciar.')
+      // Não seleciona auto para evitar confusão, força o usuário a clicar na nova
+      setEtapaId('') 
+      setJogos([])
+      setTimesDaEtapa([])
     } finally { setLoading(false) }
   }
 
@@ -96,7 +104,11 @@ export default function AdminJogos() {
     setLoading(true)
     try {
         await fetch(`/api/admin/etapas?id=${id_para_excluir}`, { method: 'DELETE', headers: { 'x-admin-pin': pin } })
-        if(String(etapaId) === String(id_para_excluir)) setEtapaId(''); 
+        if(String(etapaId) === String(id_para_excluir)) {
+            setEtapaId('')
+            setJogos([])
+            setTimesDaEtapa([])
+        }
         await loadAll()
     } finally { setLoading(false) }
   }
@@ -126,6 +138,7 @@ export default function AdminJogos() {
   }
 
   async function gerarJogosAuto() {
+    if (!etapaId) return alert("Selecione uma etapa!");
     setLoading(true)
     try {
       const res = await fetch('/api/admin/sorteio', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-pin': pin }, body: JSON.stringify({ etapa_id: Number(etapaId), data_base: sorteioDataBase || null, modo: 'BINGO', limpar_existentes: sorteioLimpar }) })
@@ -136,6 +149,7 @@ export default function AdminJogos() {
   }
 
   async function aplicarHorarios() {
+    if (!etapaId) return alert("Selecione uma etapa!");
     if (!horData) return alert("Preencha a DATA DA RODADA.")
     setLoading(true)
     try {
@@ -147,7 +161,8 @@ export default function AdminJogos() {
   }
 
   async function limparEtapa() {
-    if(!confirm("ISSO APAGA TUDO DA ETAPA. Confirmar?")) return;
+    if (!etapaId) return alert("Selecione uma etapa!");
+    if(!confirm("ISSO APAGA TUDO DA ETAPA (JOGOS E TIMES). Confirmar?")) return;
     setLoading(true)
     try {
         await fetch('/api/admin/etapas/gerenciar-times', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-pin': pin }, body: JSON.stringify({ action: 'clear', etapa_id: etapaId }) })
@@ -161,6 +176,7 @@ export default function AdminJogos() {
   }
 
   async function criarJogoManual() {
+    if (!etapaId) return alert("Selecione uma etapa primeiro!");
     if (!novoJogo.equipe_a_id) return alert("Selecione o Time A!");
     if (!novoJogo.equipe_b_id) return alert("Selecione o Time B!");
     if (novoJogo.equipe_a_id === novoJogo.equipe_b_id) return alert("Os times devem ser diferentes!");
@@ -169,7 +185,7 @@ export default function AdminJogos() {
     try {
         const payload = { 
             ...novoJogo, 
-            etapa_id: Number(etapaId), 
+            etapa_id: Number(etapaId), // Garante que vai para a etapa selecionada
             equipe_a_id: parseInt(novoJogo.equipe_a_id), 
             equipe_b_id: parseInt(novoJogo.equipe_b_id),
             rodada: novoJogo.rodada ? parseInt(novoJogo.rodada) : 1
@@ -182,6 +198,7 @@ export default function AdminJogos() {
   }
 
   async function gerarFinais() {
+    if (!etapaId) return alert("Selecione uma etapa!");
     if(!confirm("Gerar finais (1º vs 1º)?")) return;
     setLoading(true)
     try {
@@ -207,7 +224,7 @@ export default function AdminJogos() {
           <div className="w-20 h-20 bg-blue-600 rounded-3xl rotate-6 flex items-center justify-center mx-auto mb-8 shadow-lg">
              <Lock className="text-white" size={36}/>
           </div>
-          <h1 className="text-2xl font-black text-white uppercase mb-2">Acesso Admin</h1>
+          <h1 className="text-2xl font-black text-white uppercase mb-2">Acesso Jogos</h1>
           <input type="password" placeholder="PIN" className="w-full p-4 bg-slate-950 border border-slate-700 rounded-xl text-center text-white font-black text-4xl mb-6 outline-none focus:border-blue-600" value={pin} onChange={(e) => setPin(e.target.value)} maxLength={4} />
           <button onClick={auth} className="w-full bg-blue-600 text-white font-black py-4 rounded-xl uppercase hover:bg-blue-500 shadow-xl">Entrar</button>
         </div>
@@ -250,7 +267,7 @@ export default function AdminJogos() {
           <Link href="/admin" className="flex items-center gap-2 text-slate-500 hover:text-blue-600 font-bold text-sm uppercase"><ArrowLeft size={18} /> Voltar</Link>
           <div className="text-right">
             <p className="text-xs font-black uppercase text-slate-400 tracking-widest">Painel Oficial</p>
-            <h1 className="text-3xl font-black uppercase italic tracking-tighter text-slate-900">Match Center</h1>
+            <h1 className="text-3xl font-black uppercase italic tracking-tighter text-slate-900">Gestão de Jogos</h1>
           </div>
         </div>
 
@@ -259,7 +276,7 @@ export default function AdminJogos() {
           <div className="flex justify-between items-center mb-6"><h2 className="font-black uppercase text-slate-900 text-lg flex items-center gap-2"><Trophy className="text-yellow-500" size={20}/> 1. Selecione a Etapa</h2>{loading && <Loader2 className="animate-spin text-slate-400"/>}</div>
           <div className="grid md:grid-cols-5 gap-4 mb-8 p-4 bg-slate-50 rounded-2xl border border-slate-100">
             <select className="p-3 rounded-xl border bg-white font-bold text-slate-700 outline-none" value={novaEtapa.modalidade} onChange={(e) => setNovaEtapa({ ...novaEtapa, modalidade: e.target.value })}><option value="FUTSAL">FUTSAL</option><option value="SUICO">SUÍÇO</option></select>
-            <input className="p-3 rounded-xl border bg-white font-bold md:col-span-2 text-slate-700 outline-none" value={novaEtapa.titulo} onChange={(e) => setNovaEtapa({ ...novaEtapa, titulo: e.target.value })} placeholder="Nome da Etapa" />
+            <input className="p-3 rounded-xl border bg-white font-bold md:col-span-2 text-slate-700 outline-none" value={novaEtapa.titulo} onChange={(e) => setNovaEtapa({ ...novaEtapa, titulo: e.target.value })} placeholder="Nome da Etapa (Ex: Copa Verão)" />
             <button onClick={criarEtapa} className="bg-slate-900 text-white font-black rounded-xl px-4 uppercase text-xs hover:bg-blue-600 transition-colors shadow-lg"><PlusCircle size={16} className="inline mr-2"/> Criar Nova</button>
           </div>
           <div className="grid md:grid-cols-3 gap-3">
@@ -275,7 +292,7 @@ export default function AdminJogos() {
           </div>
         </div>
 
-        {etapaId && (
+        {etapaId ? (
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 {/* 2. PAINEL DE CONTROLE */}
                 <div className="bg-slate-900 text-white rounded-3xl shadow-2xl shadow-slate-400 p-8 relative overflow-hidden">
@@ -286,7 +303,7 @@ export default function AdminJogos() {
                             <p className="text-blue-400 text-[10px] font-black uppercase tracking-widest mb-4">Passo 1: Times</p>
                             <div className="flex justify-between items-end mb-6">
                                 <span className="text-4xl font-black">{timesDaEtapa.length}</span>
-                                <span className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Confirmados</span>
+                                <span className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Confirmados na Etapa</span>
                             </div>
                             <button onClick={abrirSelecaoTimes} className="w-full bg-blue-600 hover:bg-blue-500 py-3 rounded-xl font-bold text-xs uppercase flex items-center justify-center gap-2"><Users size={16}/> Selecionar Times</button>
                         </div>
@@ -315,7 +332,7 @@ export default function AdminJogos() {
                     
                     <div className="mt-8 flex justify-end gap-3 relative z-10">
                         <button onClick={gerarFinais} className="bg-yellow-500 hover:bg-yellow-400 text-slate-900 font-black px-6 py-3 rounded-xl text-xs uppercase flex items-center gap-2"><Trophy size={16}/> Gerar Finais</button>
-                        <button onClick={limparEtapa} className="bg-red-500/10 hover:bg-red-500/20 text-red-400 font-bold px-4 py-3 rounded-xl text-xs uppercase flex items-center gap-2 border border-red-500/30"><Trash2 size={14}/> Reset</button>
+                        <button onClick={limparEtapa} className="bg-red-500/10 hover:bg-red-500/20 text-red-400 font-bold px-4 py-3 rounded-xl text-xs uppercase flex items-center gap-2 border border-red-500/30"><Trash2 size={14}/> Reset Etapa</button>
                     </div>
                 </div>
 
@@ -325,7 +342,7 @@ export default function AdminJogos() {
                         <h2 className="font-black uppercase text-slate-900 text-2xl tracking-tight">Jogos</h2>
                         <span className="bg-slate-200 text-slate-600 px-3 py-1 rounded-full text-xs font-black shadow-inner">{jogos.length}</span>
                     </div>
-                    {jogos.length === 0 ? <div className="bg-white rounded-3xl p-20 text-center border border-slate-200 shadow-sm"><p className="text-slate-400 font-bold text-sm">A tabela está vazia. Gere os jogos acima.</p></div> : 
+                    {jogos.length === 0 ? <div className="bg-white rounded-3xl p-20 text-center border border-slate-200 shadow-sm"><p className="text-slate-400 font-bold text-sm">A tabela desta etapa está vazia. Gere os jogos acima.</p></div> : 
                         <div className="grid md:grid-cols-2 gap-6">
                             {jogos.map((j) => (
                                 <GameCard key={j.id} jogo={j} onUpdate={atualizarJogo} busy={loading} pin={pin} />
@@ -358,6 +375,11 @@ export default function AdminJogos() {
                         </button>
                     </div>
                 </div>
+            </div>
+        ) : (
+            <div className="text-center p-20 bg-slate-100 rounded-3xl border border-dashed border-slate-300">
+                <Trophy className="mx-auto text-slate-300 mb-4" size={64}/>
+                <p className="text-slate-500 font-bold text-lg">Selecione ou Crie uma Etapa acima para começar.</p>
             </div>
         )}
       </div>
