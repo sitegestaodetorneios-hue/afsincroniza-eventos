@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Loader2, Radio, Goal, AlertTriangle, Calendar, Clock, Trophy, User, CheckCircle } from 'lucide-react'
+import { ArrowLeft, Loader2, Radio, Goal, AlertTriangle, Calendar, Clock, Trophy, User, CheckCircle, ExternalLink, Volume2 } from 'lucide-react'
 
 async function safeJson(res) {
   try { return await res.json() } catch { return {} }
@@ -18,23 +18,51 @@ function badgeFor(tipo) {
 export default function AoVivo() {
   const [loading, setLoading] = useState(true)
   const [payload, setPayload] = useState(null)
-  const [aba, setAba] = useState('AO_VIVO') 
+  const [aba, setAba] = useState('AO_VIVO')
+  
+  // ESTADOS PARA PATROCÍNIO
+  const [patrocinios, setPatrocinios] = useState([])
+  const [indexCarrossel, setIndexCarrossel] = useState(0)
 
   async function load() {
     if (!payload) setLoading(true)
     try {
-        const res = await fetch(`/api/ao-vivo?t=${Date.now()}`, { cache: 'no-store' })
+        // Busca dados dos jogos e patrocínios em paralelo
+        const [res, resPatro] = await Promise.all([
+          fetch(`/api/ao-vivo?t=${Date.now()}`, { cache: 'no-store' }),
+          fetch('/api/admin/patrocinios')
+        ])
+        
         const data = await safeJson(res)
+        const dataPatro = await safeJson(resPatro)
+        
         if (res.ok) setPayload(data)
+        if (resPatro.ok) setPatrocinios(Array.isArray(dataPatro) ? dataPatro : [])
     } catch(e) { console.error(e) } 
     finally { setLoading(false) }
   }
 
   useEffect(() => {
     load()
-    const t = setInterval(load, 5000) 
+    const t = setInterval(load, 10000) // Jogos
     return () => clearInterval(t)
   }, [])
+
+  // Lógica do Carrossel (Troca a cada 5 segundos)
+  useEffect(() => {
+    const carrosselItems = patrocinios.filter(p => p.cota === 'CARROSSEL')
+    if (carrosselItems.length > 1) {
+      const interval = setInterval(() => {
+        setIndexCarrossel(prev => (prev + 1) % carrosselItems.length)
+      }, 5000)
+      return () => clearInterval(interval)
+    }
+  }, [patrocinios])
+
+  // Separação de Cotas
+  const patrocinadorMaster = useMemo(() => patrocinios.find(p => p.cota === 'MASTER'), [patrocinios])
+  const patrocinadoresCarrossel = useMemo(() => patrocinios.filter(p => p.cota === 'CARROSSEL'), [patrocinios])
+  const patrocinadoresRodape = useMemo(() => patrocinios.filter(p => p.cota === 'RODAPE'), [patrocinios])
 
   const equipeMap = useMemo(() => {
     const m = new Map()
@@ -119,22 +147,63 @@ export default function AoVivo() {
 
       <div className="max-w-6xl mx-auto px-4 md:px-10 -mt-8 relative z-20">
         
+        {/* BANNER MASTER (VÍDEO OU IMAGEM FIXA) */}
+        {patrocinadorMaster && (
+          <div className="mb-8 rounded-3xl overflow-hidden shadow-2xl border-4 border-white bg-black group relative">
+            <a href={patrocinadorMaster.link_destino || '#'} target="_blank">
+              {patrocinadorMaster.video_url ? (
+                <div className="relative aspect-video max-h-[250px] w-full">
+                  <video 
+                    src={patrocinadorMaster.video_url} 
+                    autoPlay loop muted playsInline 
+                    className="w-full h-full object-cover"
+                  />
+                  <div className="absolute top-4 right-4 bg-black/50 backdrop-blur-md p-2 rounded-full text-white">
+                    <Volume2 size={16} className="animate-pulse" />
+                  </div>
+                </div>
+              ) : (
+                <img 
+                  src={patrocinadorMaster.banner_url} 
+                  className="w-full h-auto max-h-[250px] object-cover transition-transform duration-700 group-hover:scale-105" 
+                  alt="Patrocínio Master"
+                />
+              )}
+              <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
+                 <span className="text-[9px] font-black text-white/60 uppercase tracking-[0.2em]">Patrocinador Master</span>
+              </div>
+            </a>
+          </div>
+        )}
+
         <div className="flex gap-2 mb-8 overflow-x-auto pb-2 scrollbar-hide">
             <button onClick={() => setAba('AO_VIVO')} className={`px-6 py-3 rounded-xl font-black text-xs uppercase whitespace-nowrap transition-all shadow-md flex items-center gap-2 ${aba === 'AO_VIVO' ? 'bg-red-600 text-white scale-105 ring-2 ring-red-300' : 'bg-white text-slate-500 hover:bg-slate-100'}`}><Radio size={16} className={listas.aoVivo.length > 0 ? 'animate-pulse' : ''} /> Ao Vivo <span className="bg-black/20 px-1.5 py-0.5 rounded text-[9px]">{listas.aoVivo.length}</span></button>
             <button onClick={() => setAba('AGENDADO')} className={`px-6 py-3 rounded-xl font-black text-xs uppercase whitespace-nowrap transition-all shadow-md flex items-center gap-2 ${aba === 'AGENDADO' ? 'bg-blue-600 text-white scale-105 ring-2 ring-blue-300' : 'bg-white text-slate-500 hover:bg-slate-100'}`}><Calendar size={16} /> Agendados <span className="bg-black/10 px-1.5 py-0.5 rounded text-[9px]">{listas.agendados.length}</span></button>
             <button onClick={() => setAba('FINALIZADO')} className={`px-6 py-3 rounded-xl font-black text-xs uppercase whitespace-nowrap transition-all shadow-md flex items-center gap-2 ${aba === 'FINALIZADO' ? 'bg-slate-800 text-white scale-105 ring-2 ring-slate-500' : 'bg-white text-slate-500 hover:bg-slate-100'}`}><CheckCircle size={16} /> Finalizados <span className="bg-black/10 px-1.5 py-0.5 rounded text-[9px]">{listas.finalizados.length}</span></button>
         </div>
 
-        {aba === 'AO_VIVO' && listas.aoVivo.length === 0 && listas.agendados.length > 0 && (
-            <div className="mb-6 flex items-center gap-2 text-slate-500"><Clock size={16} className="text-blue-500"/><p className="text-xs font-bold uppercase tracking-wide">Aguardando início. Veja a sequência:</p></div>
+        {/* CARROSSEL DE PATROCINADORES (ENTRE ABAS E JOGOS) */}
+        {patrocinadoresCarrossel.length > 0 && (
+          <div className="mb-6 animate-in fade-in slide-in-from-top-2 duration-700">
+            <a href={patrocinadoresCarrossel[indexCarrossel].link_destino || '#'} target="_blank" className="block relative group">
+              <img 
+                src={patrocinadoresCarrossel[indexCarrossel].banner_url} 
+                className="w-full h-20 md:h-24 object-cover rounded-2xl shadow-inner border border-slate-200" 
+                alt="Parceiro"
+              />
+              <div className="absolute top-1 right-2 flex gap-1">
+                {patrocinadoresCarrossel.map((_, idx) => (
+                  <div key={idx} className={`w-1.5 h-1.5 rounded-full transition-all ${idx === indexCarrossel ? 'bg-white w-4' : 'bg-white/40'}`}></div>
+                ))}
+              </div>
+            </a>
+          </div>
         )}
 
         {jogosParaMostrar.length === 0 ? (
           <div className="bg-white rounded-3xl p-16 text-center border border-slate-200 shadow-sm animate-in fade-in zoom-in duration-300">
             <Trophy className="mx-auto text-slate-200 mb-4" size={48}/>
-            <p className="text-slate-400 font-bold text-sm uppercase tracking-wide">
-                Nenhum jogo nesta lista.
-            </p>
+            <p className="text-slate-400 font-bold text-sm uppercase tracking-wide">Nenhum jogo nesta lista.</p>
           </div>
         ) : (
           <div className="space-y-6">
@@ -154,7 +223,6 @@ export default function AoVivo() {
 
               return (
                 <div key={j.id} className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden transition-all hover:shadow-md animate-in fade-in slide-in-from-bottom-4 duration-500">
-                  
                   <div className="bg-slate-50/50 p-4 border-b border-slate-100 flex justify-between items-center text-[10px] font-black uppercase text-slate-400 tracking-widest">
                       <span className="flex items-center gap-1"><Trophy size={12} className="text-yellow-600"/> {tipoLabel}</span>
                       <div className="flex items-center gap-3">
@@ -198,11 +266,24 @@ export default function AoVivo() {
                         </div>
                       </div>
                   )}
-
                   {j.arbitro && <div className="bg-slate-50 px-6 py-2 border-t border-slate-100 text-center"><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center justify-center gap-1"><span className="bg-slate-200 rounded-full p-1"><User size={10} className="text-slate-500"/></span> Árbitro: {j.arbitro}</p></div>}
                 </div>
               )
             })}
+          </div>
+        )}
+
+        {/* RODAPÉ DE PATROCINADORES FIXOS */}
+        {patrocinadoresRodape.length > 0 && (
+          <div className="mt-12 pt-8 border-t border-slate-200">
+            <p className="text-center text-[10px] font-black uppercase text-slate-400 tracking-[0.3em] mb-6">Apoio e Realização</p>
+            <div className="flex flex-wrap justify-center items-center gap-8 md:gap-12 opacity-70 grayscale hover:grayscale-0 transition-all duration-500">
+              {patrocinadoresRodape.map(p => (
+                <a key={p.id} href={p.link_destino || '#'} target="_blank">
+                  <img src={p.banner_url} alt={p.nome_empresa} className="h-8 md:h-12 w-auto object-contain hover:scale-110 transition-transform" />
+                </a>
+              ))}
+            </div>
           </div>
         )}
       </div>
