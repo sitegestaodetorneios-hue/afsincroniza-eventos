@@ -65,8 +65,9 @@ export async function PUT(request) {
     return NextResponse.json({ error: e.message }, { status: 500 })
   }
 
+  // --- MAPEAMENTO DE TODOS OS CAMPOS EDITÁVEIS ---
   const updates = compact({
-    // Identidade
+    // 1. Identidade & Contato
     nome_competicao: body.nome_competicao,
     nome_empresa: body.nome_empresa,
     logo_url: body.logo_url,
@@ -76,11 +77,11 @@ export async function PUT(request) {
     missao: body.missao,
     valores: body.valores,
 
-    // Status
-    status_futsal: body.status_futsal || 'EM_BREVE',
-    status_society: body.status_society || 'EM_BREVE',
+    // 2. Status de Inscrição
+    status_futsal: body.status_futsal,
+    status_society: body.status_society,
 
-    // Hero
+    // 3. Hero Section (Capa)
     titulo_destaque: body.titulo_destaque,
     subtitulo: body.subtitulo,
     data_limite: body.data_limite,
@@ -90,21 +91,23 @@ export async function PUT(request) {
     titulo_card_hero: body.titulo_card_hero,
     texto_card_hero: body.texto_card_hero,
 
-    // Vagas/Locais
-    vagas_futsal: typeof body.vagas_futsal === 'number' ? body.vagas_futsal : undefined,
-    vagas_society: typeof body.vagas_society === 'number' ? body.vagas_society : undefined,
-    local_futsal: body.local_futsal,
-    local_society: body.local_society,
-    inicio_futsal: body.inicio_futsal,
-    inicio_society: body.inicio_society,
-
-    // Textos cards
+    // 4. Configurações Futsal
     titulo_futsal: body.titulo_futsal,
     desc_futsal: body.desc_futsal,
+    local_futsal: body.local_futsal,
+    inicio_futsal: body.inicio_futsal,
+    vagas_futsal: typeof body.vagas_futsal === 'number' ? body.vagas_futsal : undefined,
+    preco_futsal: typeof body.preco_futsal === 'number' ? body.preco_futsal : undefined, // 👈 SALVANDO PREÇO DINÂMICO
+
+    // 5. Configurações Society
     titulo_society: body.titulo_society,
     desc_society: body.desc_society,
+    local_society: body.local_society,
+    inicio_society: body.inicio_society,
+    vagas_society: typeof body.vagas_society === 'number' ? body.vagas_society : undefined,
+    preco_society: typeof body.preco_society === 'number' ? body.preco_society : undefined, // 👈 SALVANDO PREÇO DINÂMICO
 
-    // Gerais
+    // 6. Títulos Gerais e Rodapé
     titulo_modalidades: body.titulo_modalidades,
     subtitulo_modalidades: body.subtitulo_modalidades,
     texto_footer: body.texto_footer,

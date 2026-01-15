@@ -40,15 +40,16 @@ export default function AdminPanel() {
       slogan: '', texto_empresa: '', missao: '', valores: '',
       status_futsal: 'EM_BREVE', titulo_futsal: '', desc_futsal: '', 
       local_futsal: '', inicio_futsal: '', vagas_futsal: 0,
+      preco_futsal: 150.00, // NOVO CAMPO
       status_society: 'EM_BREVE', titulo_society: '', desc_society: '', 
       local_society: '', inicio_society: '', vagas_society: 0,
+      preco_society: 150.00, // NOVO CAMPO
       texto_footer: '',
     }), []
   )
 
   const [config, setConfig] = useState(defaultConfig)
   
-  // ESTADOS PARA PATROCÍNIOS (MÚLTIPLOS)
   const [listaPatrocinios, setListaPatrocinios] = useState([])
   const [novoPatro, setNovoPatro] = useState({ 
     nome_empresa: '', banner_url: '', video_url: '', link_destino: '', cota: 'CARROSSEL' 
@@ -75,6 +76,8 @@ export default function AdminPanel() {
           ...cfg,
           vagas_futsal: Number(cfg.vagas_futsal || 0),
           vagas_society: Number(cfg.vagas_society || 0),
+          preco_futsal: Number(cfg.preco_futsal || 150.00),
+          preco_society: Number(cfg.preco_society || 150.00),
         })
       }
       
@@ -100,7 +103,6 @@ export default function AdminPanel() {
     } catch (e) { alert('Erro ao salvar configurações.') } finally { setLoading(false) }
   }
 
-  // --- FUNÇÕES DE PATROCÍNIO ---
   async function adicionarPatrocinio() {
     if(!novoPatro.nome_empresa || !novoPatro.banner_url) return alert("Preencha Nome e Banner!")
     setLoading(true)
@@ -289,7 +291,7 @@ export default function AdminPanel() {
                 </div>
             </div>
 
-            {/* SEÇÃO 4: MODALIDADES */}
+            {/* SEÇÃO 4: MODALIDADES (INCLUINDO VALORES PIX) */}
             <div className="grid md:grid-cols-2 gap-8">
                 <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-200">
                     <h3 className="flex items-center gap-3 font-black uppercase text-blue-600 text-sm mb-6 pb-4 border-b border-slate-100">4.1 Futsal</h3>
@@ -308,7 +310,13 @@ export default function AdminPanel() {
                             <div><label className="text-[10px] font-black mb-1 block uppercase text-slate-400">Local</label><input className="w-full p-2 bg-slate-50 border rounded-lg font-bold" value={config.local_futsal || ''} onChange={(e) => setConfig({ ...config, local_futsal: e.target.value })} /></div>
                             <div><label className="text-[10px] font-black mb-1 block uppercase text-slate-400">Início</label><input className="w-full p-2 bg-slate-50 border rounded-lg font-bold" value={config.inicio_futsal || ''} onChange={(e) => setConfig({ ...config, inicio_futsal: e.target.value })} /></div>
                         </div>
-                        <div><label className="text-[10px] font-black mb-1 block uppercase text-slate-400">Vagas</label><input type="number" className="w-full p-2 bg-slate-50 border rounded-lg font-bold" value={config.vagas_futsal || 0} onChange={(e) => setConfig({ ...config, vagas_futsal: Number(e.target.value) })} /></div>
+                        <div className="grid grid-cols-2 gap-2">
+                            <div><label className="text-[10px] font-black mb-1 block uppercase text-slate-400">Vagas</label><input type="number" className="w-full p-2 bg-slate-50 border rounded-lg font-bold" value={config.vagas_futsal || 0} onChange={(e) => setConfig({ ...config, vagas_futsal: Number(e.target.value) })} /></div>
+                            <div>
+                                <label className="text-[10px] font-black mb-1 block uppercase text-blue-600">Valor PIX (R$)</label>
+                                <input type="number" step="0.01" className="w-full p-2 bg-blue-50 border border-blue-200 rounded-lg font-black text-blue-700" value={config.preco_futsal || 0} onChange={(e) => setConfig({ ...config, preco_futsal: Number(e.target.value) })} />
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -329,7 +337,13 @@ export default function AdminPanel() {
                             <div><label className="text-[10px] font-black mb-1 block uppercase text-slate-400">Local</label><input className="w-full p-2 bg-slate-50 border rounded-lg font-bold" value={config.local_society || ''} onChange={(e) => setConfig({ ...config, local_society: e.target.value })} /></div>
                             <div><label className="text-[10px] font-black mb-1 block uppercase text-slate-400">Início</label><input className="w-full p-2 bg-slate-50 border rounded-lg font-bold" value={config.inicio_society || ''} onChange={(e) => setConfig({ ...config, inicio_society: e.target.value })} /></div>
                         </div>
-                        <div><label className="text-[10px] font-black mb-1 block uppercase text-slate-400">Vagas</label><input type="number" className="w-full p-2 bg-slate-50 border rounded-lg font-bold" value={config.vagas_society || 0} onChange={(e) => setConfig({ ...config, vagas_society: Number(e.target.value) })} /></div>
+                        <div className="grid grid-cols-2 gap-2">
+                            <div><label className="text-[10px] font-black mb-1 block uppercase text-slate-400">Vagas</label><input type="number" className="w-full p-2 bg-slate-50 border rounded-lg font-bold" value={config.vagas_society || 0} onChange={(e) => setConfig({ ...config, vagas_society: Number(e.target.value) })} /></div>
+                            <div>
+                                <label className="text-[10px] font-black mb-1 block uppercase text-green-600">Valor PIX (R$)</label>
+                                <input type="number" step="0.01" className="w-full p-2 bg-green-50 border border-green-200 rounded-lg font-black text-green-700" value={config.preco_society || 0} onChange={(e) => setConfig({ ...config, preco_society: Number(e.target.value) })} />
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -342,14 +356,13 @@ export default function AdminPanel() {
                 </div>
             </div>
 
-            {/* SEÇÃO 6: GESTÃO DE PATROCINADORES (FUSÃO COMPLETA) */}
+            {/* SEÇÃO 6: GESTÃO DE PATROCINADORES */}
             <div className="bg-white p-8 rounded-[2rem] shadow-xl border-2 border-blue-100 relative overflow-hidden">
                 <div className="absolute top-0 right-0 p-4 opacity-10"><Trophy size={80} className="text-blue-600"/></div>
                 <h3 className="flex items-center gap-3 font-black uppercase text-slate-800 text-sm mb-6 pb-4 border-b border-slate-100">
                     <Trophy size={18} className="text-blue-600" /> 6. Ecossistema de Patrocínios
                 </h3>
                 
-                {/* Formulário de Adição */}
                 <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100 mb-8 space-y-4">
                     <p className="text-[10px] font-black uppercase text-blue-600 tracking-widest">Adicionar Novo Parceiro</p>
                     <div className="grid md:grid-cols-3 gap-4">
@@ -383,7 +396,6 @@ export default function AdminPanel() {
                     </button>
                 </div>
 
-                {/* Lista de Patrocinadores Atuais */}
                 <div className="space-y-3">
                     <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Patrocinadores Ativos ({listaPatrocinios.length})</p>
                     {listaPatrocinios.length === 0 && <p className="text-center py-10 text-slate-400 font-bold text-sm bg-slate-50 rounded-2xl border-2 border-dashed">Nenhum patrocinador cadastrado.</p>}

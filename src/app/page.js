@@ -17,7 +17,8 @@ import {
   Phone,
   Radio,
   LayoutList,
-  Volume2
+  Volume2,
+  Code
 } from 'lucide-react'
 import { BRAND } from '@/lib/branding'
 
@@ -236,7 +237,12 @@ export default function Home() {
         </div>
         <div className="max-w-7xl mx-auto grid md:grid-cols-2 gap-8 lg:gap-12">
             {/* FUTSAL CARD */}
-            <div className="bg-white border border-slate-200 p-8 md:p-10 rounded-[2.5rem] hover:shadow-2xl transition-all duration-300">
+            <div className="bg-white border border-slate-200 p-8 md:p-10 rounded-[2.5rem] hover:shadow-2xl transition-all duration-300 relative overflow-hidden">
+              {/* VALOR DA INSCRIÇÃO ADICIONADO */}
+              <div className="absolute top-0 right-0 bg-blue-600 text-white px-6 py-2 rounded-bl-3xl font-black text-sm shadow-md italic z-20">
+                R$ {siteData?.preco_futsal || '150,00'}
+              </div>
+
               <div className="flex justify-between items-start gap-4 mb-6">
                 <div><p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Modalidade</p><h3 className="text-3xl font-black text-slate-900 mt-1">{siteData?.titulo_futsal || 'Futsal'}</h3></div>
                 <span className={`text-[10px] font-black px-4 py-2 rounded-full uppercase tracking-wide ${futsalOpen ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{futsalOpen ? 'Inscrições abertas' : 'Em breve (reserva)'}</span>
@@ -252,7 +258,12 @@ export default function Home() {
             </div>
 
             {/* SUICO CARD */}
-            <div className="bg-white border border-slate-200 p-8 md:p-10 rounded-[2.5rem] hover:shadow-2xl transition-all duration-300">
+            <div className="bg-white border border-slate-200 p-8 md:p-10 rounded-[2.5rem] hover:shadow-2xl transition-all duration-300 relative overflow-hidden">
+              {/* VALOR DA INSCRIÇÃO ADICIONADO */}
+              <div className="absolute top-0 right-0 bg-green-600 text-white px-6 py-2 rounded-bl-3xl font-black text-sm shadow-md italic z-20">
+                R$ {siteData?.preco_society || '150,00'}
+              </div>
+
               <div className="flex justify-between items-start gap-4 mb-6">
                 <div><p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Modalidade</p><h3 className="text-3xl font-black text-slate-900 mt-1">{siteData?.titulo_society || 'Suíço'}</h3></div>
                 <span className={`text-[10px] font-black px-4 py-2 rounded-full uppercase tracking-wide ${suicoOpen ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{suicoOpen ? 'Inscrições abertas' : 'Em breve (reserva)'}</span>
@@ -263,7 +274,7 @@ export default function Home() {
                 <div className="flex items-center gap-3 text-sm font-bold text-slate-500"><div className="p-1.5 bg-slate-50 rounded-lg"><Calendar size={16} className="text-green-600" /></div>{siteData?.inicio_society || 'Início a definir'}</div>
               </div>
               <div className="mt-8 flex flex-col sm:flex-row gap-3">
-                {suicoOpen ? ( <Link href="/inscricao" className="flex-1"><button className="w-full bg-slate-900 text-white font-bold px-6 py-4 rounded-2xl hover:bg-green-600 transition-all flex items-center justify-center gap-2">INSCREVER <ArrowRight size={18} /></button></Link> ) : ( <a className="flex-1" href={waLink(defs.whatsapp, defs.reserveMsg)} target="_blank"><button className="w-full bg-slate-900 text-white font-bold px-6 py-4 rounded-2xl hover:bg-green-600 transition-all flex items-center justify-center gap-2">RESERVAR VAGA <ArrowRight size={18} /></button></a> )}
+                {suicoOpen ? ( <Link href="/inscricao" className="flex-1"><button className="w-full bg-slate-900 text-white font-bold px-6 py-4 rounded-2xl hover:bg-blue-600 transition-all flex items-center justify-center gap-2">INSCREVER <ArrowRight size={18} /></button></Link> ) : ( <a className="flex-1" href={waLink(defs.whatsapp, defs.reserveMsg)} target="_blank"><button className="w-full bg-slate-900 text-white font-bold px-6 py-4 rounded-2xl hover:bg-blue-600 transition-all flex items-center justify-center gap-2">RESERVAR VAGA <ArrowRight size={18} /></button></a> )}
               </div>
             </div>
         </div>
@@ -301,14 +312,14 @@ export default function Home() {
       {apoiadores.length > 0 && (
         <section className="py-20 bg-slate-50 border-t border-slate-200 text-center">
            <div className="max-w-7xl mx-auto px-6">
-              <p className="text-[10px] font-black uppercase text-slate-400 tracking-[0.4em] mb-12">Apoio Institucional e Realização</p>
-              <div className="flex flex-wrap justify-center items-center gap-10 md:gap-20 opacity-60 grayscale hover:grayscale-0 transition-all duration-700">
-                {apoiadores.map(p => (
-                  <a key={p.id} href={p.link_destino || '#'} target="_blank" className="hover:scale-110 transition-transform">
-                    <img src={p.banner_url} alt={p.nome_empresa} className="h-10 md:h-14 w-auto object-contain" />
-                  </a>
-                ))}
-              </div>
+             <p className="text-[10px] font-black uppercase text-slate-400 tracking-[0.4em] mb-12">Apoio Institucional e Realização</p>
+             <div className="flex flex-wrap justify-center items-center gap-10 md:gap-20 opacity-60 grayscale hover:grayscale-0 transition-all duration-700">
+               {apoiadores.map(p => (
+                 <a key={p.id} href={p.link_destino || '#'} target="_blank" className="hover:scale-110 transition-transform">
+                   <img src={p.banner_url} alt={p.nome_empresa} className="h-10 md:h-14 w-auto object-contain" />
+                 </a>
+               ))}
+             </div>
            </div>
         </section>
       )}
@@ -324,12 +335,30 @@ export default function Home() {
               <p className="text-slate-600 text-xs mt-6 font-mono">© 2026 {defs.companyName}.</p>
             </div>
           </div>
-          <div className="flex flex-col items-end gap-4">
+          <div className="flex flex-col items-end gap-6">
             <div className="flex gap-8 text-xs font-bold uppercase tracking-widest text-slate-400">
               <Link href="/regulamento" className="hover:text-white transition-colors">Termos</Link>
               <Link href="/privacidade" className="hover:text-white transition-colors">Privacidade</Link>
             </div>
             <Link href="/admin"><button className="text-[10px] font-bold uppercase tracking-widest text-slate-700 bg-slate-800 px-4 py-2 rounded-lg hover:bg-slate-700 hover:text-white transition-all">Acesso Administrativo</button></Link>
+
+            {/* CRÉDITOS DO DESENVOLVEDOR - EXATAMENTE COMO VOCÊ QUER */}
+            <div className="flex items-center gap-3 bg-white/5 px-4 py-2.5 rounded-xl border border-white/5 group hover:border-blue-600/50 transition-all duration-500 mt-4">
+                <div className="w-7 h-7 rounded bg-blue-600/10 flex items-center justify-center">
+                    <Code size={14} className="text-blue-500 group-hover:scale-110 transition-transform" />
+                </div>
+                <div className="leading-tight">
+                    <span className="text-[8px] font-black text-slate-500 block uppercase tracking-widest">Powered by</span>
+                    <a 
+                      href="https://wa.me/5547997037512" 
+                      target="_blank" 
+                      className="text-[10px] font-black text-white uppercase italic tracking-tighter hover:text-blue-400 transition-colors"
+                    >
+                      RC <span className="text-blue-600">ENTERPRISE</span>
+                    </a>
+                </div>
+            </div>
+
           </div>
         </div>
       </footer>

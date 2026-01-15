@@ -1,55 +1,58 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 
-export async function POST(request) {
+export async function POST(req) {
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   )
 
   try {
-    const body = await request.json()
-    const { nome_equipe, capitao, whatsapp, modalidade, cidade } = body
+    const body = await req.json()
+    const { nome_equipe, capitao, email, senha, modalidade, whatsapp, cidade } = body
+    const emailLimpo = email.toLowerCase().trim()
 
-    // 1. Validação de Segurança: Verifica se ainda tem vaga antes de salvar
-    // Busca config
-    const { data: config } = await supabase.from('config').select('*').single()
-    
-    // Conta pagos dessa modalidade
-    const { count: pagos } = await supabase
-        .from('equipes')
-        .select('*', { count: 'exact', head: true })
-        .eq('modalidade', modalidade)
-        .eq('pago', true)
+    // 1. VERIFICAÇÃO DE DUPLICIDADE
+    // Procuramos se já existe alguma equipe com este e-mail
+    const { data: existe } = await supabase
+      .from('equipes')
+      .select('email')
+      .eq('email', emailLimpo)
+      .maybeSingle()
 
-    const limite = modalidade === 'FUTSAL' ? config.vagas_futsal : config.vagas_society
-    
-    // Se já lotou, bloqueia (Permite criar como "Reserva" se quiser, mas aqui vou bloquear)
-    if (pagos >= limite) {
-        return NextResponse.json({ error: 'Sinto muito, as vagas acabaram enquanto você preenchia!' }, { status: 400 })
+    if (existe) {
+      return NextResponse.json(
+        { error: 'Este e-mail já está sendo utilizado por outra equipe.' }, 
+        { status: 400 }
+      )
     }
 
-    // 2. Salva a equipe (como pago=false inicialmente)
+    // 2. SE NÃO EXISTIR, PROSEGUE COM A INSERÇÃO
     const { data, error } = await supabase
       .from('equipes')
       .insert([
         {
           nome_equipe,
-          nome_capitao: capitao,
-          whatsapp, // lembre de limpar caracteres no front
+          nome_capitao: capitao, 
+          email: emailLimpo,
+          senha,
+          senha_hash: senha,
           modalidade,
+          whatsapp,
           cidade,
-          pago: false, // Começa pendente
-          data_inscricao: new Date()
+          pago: false,
+          termo_assinado: false
         }
       ])
       .select()
+      .single()
 
     if (error) throw error
 
-    return NextResponse.json({ success: true, id: data[0].id })
+    return NextResponse.json({ success: true, equipe: data })
 
   } catch (e) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+    console.error('ERRO INSCRIÇÃO:', e.message)
+    return NextResponse.json({ error: 'Erro ao processar inscrição: ' + e.message }, { status: 500 })
   }
 }
