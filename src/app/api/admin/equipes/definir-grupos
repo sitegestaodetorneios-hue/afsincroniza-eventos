@@ -1,0 +1,30 @@
+import { createClient } from '@supabase/supabase-js'
+import { NextResponse } from 'next/server'
+
+export async function POST(request) {
+  try {
+    const { sorteio } = await request.json()
+    
+    // Usamos a Service Role para ter permissão de escrita em massa
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY
+    )
+
+    // Atualiza cada equipe sorteada individualmente ou via RPC
+    // Para simplificar, faremos um loop de updates:
+    const promessas = sorteio.map(item => 
+      supabase
+        .from('equipes')
+        .update({ grupo: item.grupo })
+        .eq('id', item.id)
+    )
+
+    await Promise.all(promessas)
+
+    return NextResponse.json({ ok: true, message: "Grupos salvos com sucesso!" })
+  } catch (error) {
+    console.error('Erro ao salvar sorteio:', error)
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+}

@@ -310,8 +310,12 @@ export default function AdminJogos() {
                         <div className="lg:col-span-2 bg-white/5 p-6 rounded-3xl border border-white/10 grid grid-cols-2 gap-6 relative">
                             <div><p className="text-yellow-400 text-[10px] font-black uppercase tracking-widest mb-3 border-b border-white/10 pb-2">Grupo A</p><ul className="text-xs font-medium text-slate-300 space-y-1">{grupos.A.map(t => <li key={t.id}>• {t.nome_equipe}</li>)}</ul></div>
                             <div><p className="text-yellow-400 text-[10px] font-black uppercase tracking-widest mb-3 border-b border-white/10 pb-2">Grupo B</p><ul className="text-xs font-medium text-slate-300 space-y-1">{grupos.B.map(t => <li key={t.id}>• {t.nome_equipe}</li>)}</ul></div>
-                            <button onClick={sortearGrupos} className="absolute top-4 right-4 bg-slate-800 hover:bg-slate-700 py-2 px-4 rounded-lg font-bold text-[10px] uppercase flex items-center justify-center gap-2 border border-white/10"><Shuffle size={12}/> Sortear</button>
-                        </div>
+                            <Link 
+                              href={`/admin/sorteio?etapa_id=${etapaId}`} 
+                              className="absolute top-4 right-4 bg-slate-800 hover:bg-slate-700 py-2 px-4 rounded-lg font-bold text-[10px] uppercase flex items-center justify-center gap-2 border border-white/10 text-white"
+                            >
+                              <Shuffle size={12}/> Abrir Sorteio Animado
+                            </Link></div>
                     </div>
                     
                     <div className="grid lg:grid-cols-4 gap-6 pt-8 border-t border-white/10 relative z-10">
