@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Trophy, Info, Loader2, ChevronDown } from 'lucide-react'
+import { ArrowLeft, Trophy, Info, Loader2, ChevronDown, Volume2 } from 'lucide-react'
 
 export default function Tabela() {
   const [loading, setLoading] = useState(true)
@@ -13,6 +13,10 @@ export default function Tabela() {
       artilharia: [] 
   })
   const [filtroId, setFiltroId] = useState('')
+  
+  // ESTADOS PARA PATROCÍNIO
+  const [patrocinios, setPatrocinios] = useState([])
+  const [indexCarrossel, setIndexCarrossel] = useState(0)
 
   async function loadTabela(id = '', isBackground = false) {
     if (!isBackground) setLoading(true)
@@ -20,11 +24,19 @@ export default function Tabela() {
       const targetId = id || filtroId
       const url = targetId ? `/api/tabela?etapa_id=${targetId}` : '/api/tabela'
       
-      const res = await fetch(url)
+      // Busca Tabela e Patrocínios em paralelo para não perder performance
+      const [res, resPatro] = await Promise.all([
+        fetch(url),
+        fetch('/api/admin/patrocinios')
+      ])
+
       if (!res.ok) throw new Error('Erro')
       
       const json = await res.json()
+      const patroData = await resPatro.json().catch(() => [])
+      
       setData(json)
+      setPatrocinios(Array.isArray(patroData) ? patroData : [])
       
       if (!targetId && json.etapa) setFiltroId(json.etapa.id)
     } catch (e) { 
@@ -34,12 +46,28 @@ export default function Tabela() {
     }
   }
 
-  // Auto-refresh a cada 10s
+  // Auto-refresh a cada 10s (Função Original Mantida)
   useEffect(() => {
     loadTabela(filtroId)
     const intervalo = setInterval(() => { loadTabela(filtroId, true) }, 10000)
     return () => clearInterval(intervalo)
   }, [filtroId])
+
+  // Lógica do Carrossel (Troca a cada 5 segundos)
+  useEffect(() => {
+    const carrosselItems = patrocinios.filter(p => p.cota === 'CARROSSEL')
+    if (carrosselItems.length > 1) {
+      const interval = setInterval(() => {
+        setIndexCarrossel(prev => (prev + 1) % carrosselItems.length)
+      }, 5000)
+      return () => clearInterval(interval)
+    }
+  }, [patrocinios])
+
+  // Filtros de Cota
+  const patrocinadorMaster = useMemo(() => patrocinios.find(p => p.cota === 'MASTER'), [patrocinios])
+  const patrocinadoresCarrossel = useMemo(() => patrocinios.filter(p => p.cota === 'CARROSSEL'), [patrocinios])
+  const patrocinadoresRodape = useMemo(() => patrocinios.filter(p => p.cota === 'RODAPE'), [patrocinios])
 
   function handleTrocarEtapa(e) {
       const novoId = e.target.value
@@ -55,10 +83,10 @@ export default function Tabela() {
   }, [data.classificacao])
 
   return (
-    <main className="min-h-screen bg-slate-50 py-10 px-4 md:px-10 font-sans text-slate-800">
+    <main className="min-h-screen bg-slate-50 py-10 px-4 md:px-10 font-sans text-slate-800 pb-20">
       <div className="max-w-7xl mx-auto">
         
-        {/* HEADER */}
+        {/* HEADER ORIGINAL */}
         <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
           <div className="flex items-center gap-4 w-full md:w-auto">
               <Link href="/" className="flex items-center gap-2 text-slate-500 hover:text-blue-600 font-bold text-sm uppercase transition-colors">
@@ -94,9 +122,28 @@ export default function Tabela() {
           </div>
         </div>
 
+        {/* BANNER MASTER DINÂMICO */}
+        {patrocinadorMaster && (
+          <div className="mb-10 rounded-3xl overflow-hidden shadow-xl border-4 border-white bg-slate-900 relative group animate-in fade-in duration-700">
+            <a href={patrocinadorMaster.link_destino || '#'} target="_blank">
+              {patrocinadorMaster.video_url ? (
+                <div className="relative aspect-[4/1] md:aspect-[5/1] max-h-[220px] w-full">
+                  <video src={patrocinadorMaster.video_url} autoPlay loop muted playsInline className="w-full h-full object-cover" />
+                  <div className="absolute top-3 right-3 bg-black/40 backdrop-blur-sm p-1.5 rounded-full text-white/70"><Volume2 size={14}/></div>
+                </div>
+              ) : (
+                <img src={patrocinadorMaster.banner_url} className="w-full h-auto max-h-[220px] object-cover transition-transform duration-1000 group-hover:scale-105" alt="Sponsor" />
+              )}
+              <div className="absolute top-0 left-0 p-3 bg-gradient-to-r from-black/60 to-transparent">
+                 <span className="text-[8px] font-black text-white/80 uppercase tracking-widest">Patrocinador Master</span>
+              </div>
+            </a>
+          </div>
+        )}
+
         {loading && !data.etapa ? <div className="text-center p-20 text-slate-400 font-bold"><Loader2 className="animate-spin mx-auto mb-2"/> Carregando...</div> : !data.etapa ? <div className="text-center p-20 text-slate-400 font-bold bg-white rounded-3xl border border-slate-200">Sem dados.</div> : (
             <>
-                {/* INFO DA ETAPA */}
+                {/* INFO DA ETAPA ORIGINAL */}
                 <div className="bg-white border border-slate-200 rounded-2xl p-6 mb-8 flex flex-col md:flex-row gap-6 items-center shadow-sm">
                     <div className="flex-1">
                         <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Torneio Oficial</p>
@@ -118,7 +165,6 @@ export default function Tabela() {
                 </div>
 
                 <div className="grid lg:grid-cols-3 gap-8 mb-12">
-                    {/* TABELAS LADO A LADO */}
                     <div className="lg:col-span-2">
                         {grupos.A.length > 0 ? (
                             <div className={`grid gap-6 ${grupos.modo === 'DUPLO' ? 'md:grid-cols-2' : 'grid-cols-1'}`}>
@@ -128,9 +174,18 @@ export default function Tabela() {
                         ) : (
                             <div className="bg-white p-10 rounded-3xl text-center border border-dashed border-slate-300 text-slate-400 font-bold">Aguardando início dos jogos.</div>
                         )}
+                        
+                        {/* CARROSSEL DE PATROCÍNIO - ENTRE TABELA E FINAIS */}
+                        {patrocinadoresCarrossel.length > 0 && (
+                          <div className="mt-8 animate-in fade-in duration-700">
+                            <a href={patrocinadoresCarrossel[indexCarrossel].link_destino || '#'} target="_blank" className="block relative group overflow-hidden rounded-2xl border border-slate-200">
+                              <img src={patrocinadoresCarrossel[indexCarrossel].banner_url} className="w-full h-24 object-cover" alt="Parceiro" />
+                            </a>
+                          </div>
+                        )}
                     </div>
 
-                    {/* ARTILHARIA */}
+                    {/* ARTILHARIA ORIGINAL RESTAURADA */}
                     <div className="lg:col-span-1">
                         <div className="bg-slate-900 text-white rounded-3xl p-6 shadow-xl border border-slate-800 h-full max-h-[600px] flex flex-col">
                             <h3 className="font-black uppercase tracking-widest text-sm mb-4 flex items-center gap-2 text-yellow-400 border-b border-white/10 pb-4"><Trophy size={16}/> Top Artilheiros</h3>
@@ -153,7 +208,7 @@ export default function Tabela() {
                     </div>
                 </div>
 
-                {/* FINAIS */}
+                {/* SEÇÃO DE FINAIS RESTAURADA NO DETALHE */}
                 {data.finais?.length > 0 && (
                     <div className="mb-12 animate-in fade-in slide-in-from-bottom-8 duration-700">
                         <h2 className="text-xl font-black uppercase text-slate-900 mb-6 flex items-center gap-2"><Trophy className="text-yellow-500"/> Finais & Decisões</h2>
@@ -182,6 +237,34 @@ export default function Tabela() {
                 )}
             </>
         )}
+
+        {/* RODAPÉ INSTITUCIONAL E CRÉDITOS */}
+        <footer className="mt-20 pt-10 border-t border-slate-200">
+          {patrocinadoresRodape.length > 0 && (
+            <div className="mb-12 text-center">
+              <p className="text-[10px] font-black uppercase text-slate-400 tracking-[0.4em] mb-8">Apoio Institucional</p>
+              <div className="flex flex-wrap justify-center items-center gap-10 opacity-60 grayscale hover:grayscale-0 transition-all duration-700">
+                {patrocinadoresRodape.map(p => (
+                  <a key={p.id} href={p.link_destino || '#'} target="_blank" title={p.nome_empresa}>
+                    <img src={p.banner_url} alt={p.nome_empresa} className="h-10 md:h-14 w-auto object-contain hover:scale-110 transition-transform" />
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* SELO RONALDO CESCON ENTERPRISE */}
+          <div className="pt-8 border-t border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
+            <p className="text-[10px] text-slate-400 font-mono uppercase tracking-widest">© 2026 GESTÃO ESPORTIVA</p>
+            <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+              <span>Desenvolvido por</span>
+              <a href="https://wa.me/5547997037512?text=Olá Ronaldo! Gostaria de um orçamento para um sistema esportivo." target="_blank" className="text-blue-500 hover:text-blue-400 transition-colors flex items-center gap-1.5 group" title="RONALDO CESCON ENTERPRISE - ME - 60.059.963/0001-92">
+                <span className="border-b border-blue-500/30 group-hover:border-blue-400 tracking-tighter">RC ENTERPRISE</span>
+                <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></div>
+              </a>
+            </div>
+          </div>
+        </footer>
       </div>
     </main>
   )
@@ -202,7 +285,6 @@ function TabelaCard({ titulo, times, cor }) {
                     <tbody className="divide-y divide-slate-50">
                         {times.map((time, i) => (
                             <tr key={time.equipe_id} className="hover:bg-slate-50 transition-colors group">
-                                {/* CORREÇÃO AQUI: Top 2 sempre verdes (i < 2) */}
                                 <td className={`p-3 text-center font-black ${i < 2 ? 'text-green-600' : 'text-slate-300'}`}>{i + 1}</td>
                                 <td className="p-3 font-bold text-slate-700 truncate max-w-[140px] group-hover:text-blue-600 transition-colors">{time.nome_equipe}</td>
                                 <td className="p-3 text-center font-black text-slate-900 text-base">{time.pts}</td>

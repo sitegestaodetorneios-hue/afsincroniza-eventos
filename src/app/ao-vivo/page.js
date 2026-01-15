@@ -44,7 +44,7 @@ export default function AoVivo() {
 
   useEffect(() => {
     load()
-    const t = setInterval(load, 10000) // Jogos
+    const t = setInterval(load, 10000) // Jogos atualizam a cada 10s
     return () => clearInterval(t)
   }, [])
 
@@ -182,7 +182,7 @@ export default function AoVivo() {
             <button onClick={() => setAba('FINALIZADO')} className={`px-6 py-3 rounded-xl font-black text-xs uppercase whitespace-nowrap transition-all shadow-md flex items-center gap-2 ${aba === 'FINALIZADO' ? 'bg-slate-800 text-white scale-105 ring-2 ring-slate-500' : 'bg-white text-slate-500 hover:bg-slate-100'}`}><CheckCircle size={16} /> Finalizados <span className="bg-black/10 px-1.5 py-0.5 rounded text-[9px]">{listas.finalizados.length}</span></button>
         </div>
 
-        {/* CARROSSEL DE PATROCINADORES (ENTRE ABAS E JOGOS) */}
+        {/* CARROSSEL DE PATROCINADORES */}
         {patrocinadoresCarrossel.length > 0 && (
           <div className="mb-6 animate-in fade-in slide-in-from-top-2 duration-700">
             <a href={patrocinadoresCarrossel[indexCarrossel].link_destino || '#'} target="_blank" className="block relative group">
@@ -214,17 +214,13 @@ export default function AoVivo() {
               const ga = j.gols_a ?? 0
               const gb = j.gols_b ?? 0
               const isLive = j.status === 'EM_ANDAMENTO'
-              
-              const tipoRaw = j.tipo_jogo || 'JOGO'
-              const tipoLabel = tipoRaw === 'GRUPO' ? `Rodada ${j.rodada || '-'}` : tipoRaw.replace(/_/g, ' ')
               const horaDisplay = j.horario ? String(j.horario).slice(0, 5) : '--:--'
               const dataDisplay = j.data_jogo ? new Date(j.data_jogo + 'T00:00:00').toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit'}) : 'Data a definir'
-              const hasPenalties = j.penaltis_a !== null && j.penaltis_b !== null
 
               return (
                 <div key={j.id} className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden transition-all hover:shadow-md animate-in fade-in slide-in-from-bottom-4 duration-500">
                   <div className="bg-slate-50/50 p-4 border-b border-slate-100 flex justify-between items-center text-[10px] font-black uppercase text-slate-400 tracking-widest">
-                      <span className="flex items-center gap-1"><Trophy size={12} className="text-yellow-600"/> {tipoLabel}</span>
+                      <span className="flex items-center gap-1"><Trophy size={12} className="text-yellow-600"/> {j.tipo_jogo?.replace(/_/g, ' ') || 'JOGO'}</span>
                       <div className="flex items-center gap-3">
                           <span className="flex items-center gap-1"><Calendar size={12}/> {dataDisplay}</span>
                           <span className={`flex items-center gap-1 px-2 py-1 rounded-md border ${j.horario ? 'bg-blue-50 text-blue-700 border-blue-100' : 'bg-slate-100 text-slate-400 border-slate-200'}`}><Clock size={12}/> {horaDisplay}</span>
@@ -240,7 +236,7 @@ export default function AoVivo() {
                             <span className="text-slate-400 text-xl font-light">×</span>
                             <span className="text-3xl font-black min-w-[30px] text-center">{gb}</span>
                         </div>
-                        {hasPenalties && <div className="mt-2 text-[10px] font-black uppercase tracking-widest text-slate-500 bg-slate-100 px-2 py-1 rounded border border-slate-200">Pen: ({j.penaltis_a}) - ({j.penaltis_b})</div>}
+                        {(j.penaltis_a !== null) && <div className="mt-2 text-[10px] font-black uppercase tracking-widest text-slate-500 bg-slate-100 px-2 py-1 rounded border border-slate-200">Pen: ({j.penaltis_a}) - ({j.penaltis_b})</div>}
                     </div>
                     <div className="flex-1 text-center md:text-left w-full"><p className="text-lg md:text-xl font-black text-slate-900 leading-tight">{b}</p></div>
                   </div>
@@ -253,13 +249,10 @@ export default function AoVivo() {
                                 const badge = badgeFor(ev.tipo)
                                 const teamName = ev.equipe_id === j.equipe_a_id ? a : b
                                 const atleta = ev.atleta_id ? atletaMap.get(ev.atleta_id) : null
-                                const nomeAtleta = atleta ? atleta.nome.split(' ')[0] : 'Atleta' 
-                                const tempo = ev.minuto ? `${ev.minuto}'` : ''
-                                const obs = ev.observacao ? ` - ${ev.observacao}` : ''
                                 return (
                                     <div key={ev.id} className="bg-white border border-slate-200 p-2 rounded-xl flex items-center justify-between text-xs shadow-sm">
                                         <div className="flex items-center gap-2"><span className={`font-black px-2 py-0.5 rounded text-[9px] border ${badge.cls}`}>{badge.label}</span><span className="font-bold text-slate-700">{teamName}</span></div>
-                                        <div className="flex items-center gap-2 text-slate-500 font-medium"><span>{nomeAtleta} {ev.camisa_no_jogo ? `(#${ev.camisa_no_jogo})` : ''}{obs}</span>{tempo && <span className="font-black text-slate-900 bg-slate-100 px-1.5 rounded">{tempo}</span>}</div>
+                                        <div className="flex items-center gap-2 text-slate-500 font-medium"><span>{atleta?.nome || 'Atleta'} {ev.camisa_no_jogo ? `(#${ev.camisa_no_jogo})` : ''}</span>{ev.minuto && <span className="font-black text-slate-900 bg-slate-100 px-1.5 rounded">{ev.minuto}'</span>}</div>
                                     </div>
                                 )
                             })}
@@ -273,19 +266,38 @@ export default function AoVivo() {
           </div>
         )}
 
-        {/* RODAPÉ DE PATROCINADORES FIXOS */}
-        {patrocinadoresRodape.length > 0 && (
-          <div className="mt-12 pt-8 border-t border-slate-200">
-            <p className="text-center text-[10px] font-black uppercase text-slate-400 tracking-[0.3em] mb-6">Apoio e Realização</p>
-            <div className="flex flex-wrap justify-center items-center gap-8 md:gap-12 opacity-70 grayscale hover:grayscale-0 transition-all duration-500">
-              {patrocinadoresRodape.map(p => (
-                <a key={p.id} href={p.link_destino || '#'} target="_blank">
-                  <img src={p.banner_url} alt={p.nome_empresa} className="h-8 md:h-12 w-auto object-contain hover:scale-110 transition-transform" />
-                </a>
-              ))}
+        {/* RODAPÉ DE PATROCINADORES E CRÉDITOS */}
+        <footer className="mt-16 pt-8 border-t border-slate-200">
+          {patrocinadoresRodape.length > 0 && (
+            <div className="mb-12">
+              <p className="text-center text-[10px] font-black uppercase text-slate-400 tracking-[0.3em] mb-6">Apoio e Realização</p>
+              <div className="flex flex-wrap justify-center items-center gap-8 md:gap-12 opacity-70 grayscale hover:grayscale-0 transition-all duration-500">
+                {patrocinadoresRodape.map(p => (
+                  <a key={p.id} href={p.link_destino || '#'} target="_blank">
+                    <img src={p.banner_url} alt={p.nome_empresa} className="h-8 md:h-12 w-auto object-contain hover:scale-110 transition-transform" />
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* CRÉDITOS DO DESENVOLVEDOR - RC ENTERPRISE */}
+          <div className="pt-8 border-t border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
+            <p className="text-[10px] text-slate-400 font-mono uppercase tracking-widest">© 2026 GESTÃO ESPORTIVA</p>
+            <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+              <span>Desenvolvido por</span>
+              <a 
+                href="https://wa.me/5547997037512?text=Olá Ronaldo! Vi o sistema Ao Vivo e gostaria de um orçamento." 
+                target="_blank" 
+                className="text-blue-500 hover:text-blue-400 transition-colors flex items-center gap-1.5 group" 
+                title="RONALDO CESCON ENTERPRISE - ME - 60.059.963/0001-92"
+              >
+                <span className="border-b border-blue-500/30 group-hover:border-blue-400 tracking-tighter">RC ENTERPRISE</span>
+                <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></div>
+              </a>
             </div>
           </div>
-        )}
+        </footer>
       </div>
     </main>
   )
