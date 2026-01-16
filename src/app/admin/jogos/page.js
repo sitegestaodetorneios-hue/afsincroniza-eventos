@@ -2,10 +2,11 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import {
   ArrowLeft, PlusCircle, Save, CheckCircle, XCircle, Loader2, 
   ClipboardList, Trash2, Shuffle, Trophy, Clock, Users, Calendar, 
-  PlayCircle, StopCircle, Edit3, AlertTriangle, X, User, Lock, FileText, RotateCcw
+  PlayCircle, StopCircle, Edit3, X, User, Lock, RotateCcw
 } from 'lucide-react'
 
 // Função auxiliar segura para ler JSON
@@ -18,41 +19,48 @@ async function safeJson(res) {
 
 export default function AdminJogos() {
   const [pin, setPin] = useState('')
-  const [authed, setAutenticado] = useState(false) // Corrigido nome para consistência
+  const [authed, setAutenticado] = useState(false)
   const [loading, setLoading] = useState(false)
+  const router = useRouter()
 
-  // Dados
+  // Dados Globais
   const [etapas, setEtapas] = useState([])
   const [etapaId, setEtapaId] = useState('')
   const [jogos, setJogos] = useState([])
   const [todosTimes, setTodosTimes] = useState([]) 
   const [timesDaEtapa, setTimesDaEtapa] = useState([]) 
 
-  // Modal e Configs
+  // Modal e Configurações
   const [showModalTimes, setShowModalTimes] = useState(false)
   const [selectedTeams, setSelectedTeams] = useState(new Set())
+  
+  // Configurações de Agendamento em Massa
   const [horData, setHorData] = useState('') 
   const [horInicio, setHorInicio] = useState('08:00')
   const [horDuracao, setHorDuracao] = useState(50) 
   const [horIntervalo, setHorIntervalo] = useState(5)
+  
+  // Configurações de Sorteio
   const [sorteioDataBase, setSorteioDataBase] = useState('')
   const [sorteioLimpar, setSorteioLimpar] = useState(true)
+  
+  // Criação de Nova Etapa
   const [novaEtapa, setNovaEtapa] = useState({ modalidade: 'FUTSAL', titulo: '', status: 'EM_ANDAMENTO' })
   
-  // Novo Jogo Manual
+  // Novo Jogo Manual (Backup)
   const [novoJogo, setNovoJogo] = useState({ 
       rodada: '', data_jogo: '', equipe_a_id: '', equipe_b_id: '', tipo_jogo: 'GRUPO'
   })
 
   function auth() { if (pin === '2026') { setAutenticado(true) } else alert('PIN incorreto') }
 
-  // --- CARREGAMENTO ---
+  // --- CARREGAMENTO INICIAL ---
   async function loadAll() {
     setLoading(true)
     try {
       const [etRes, allTeamsRes] = await Promise.all([
-        fetch('/api/admin/etapas', { headers: { 'x-admin-pin': pin } }),
-        fetch('/api/admin/teams', { headers: { 'x-admin-pin': pin } })
+        fetch('/api/admin/etapas', { headers: { 'x-admin-pin': pin }, cache: 'no-store' }),
+        fetch('/api/admin/teams', { headers: { 'x-admin-pin': pin }, cache: 'no-store' })
       ])
       const etData = await safeJson(etRes)
       const teamsData = await safeJson(allTeamsRes)
@@ -65,34 +73,38 @@ export default function AdminJogos() {
 
   useEffect(() => { if (authed) loadAll() }, [authed])
 
+  // --- SELEÇÃO DE ETAPA ---
   async function selecionarEtapa(id) {
     if (!id) return;
     setEtapaId(String(id))
     setLoading(true)
+    
+    // Reseta configurações de horário ao trocar de etapa para evitar erros
+    setHorData('') 
+    
     try {
-        const resJogos = await fetch(`/api/admin/jogos?etapa_id=${id}`, { headers: { 'x-admin-pin': pin } })
+        // 1. Busca Jogos
+        const resJogos = await fetch(`/api/admin/jogos?etapa_id=${id}`, { headers: { 'x-admin-pin': pin }, cache: 'no-store' })
         const dataJogos = await safeJson(resJogos)
         setJogos(Array.isArray(dataJogos) ? dataJogos : [])
 
-        const resGrupos = await fetch(`/api/admin/etapas/gerenciar-times?etapa_id=${id}`, { headers: { 'x-admin-pin': pin } })
+        // 2. Busca Times da Etapa (para mostrar os grupos A e B e contagem)
+        const resGrupos = await fetch(`/api/admin/etapas/gerenciar-times?etapa_id=${id}`, { headers: { 'x-admin-pin': pin }, cache: 'no-store' })
         const dataGrupos = await safeJson(resGrupos)
         setTimesDaEtapa(Array.isArray(dataGrupos) ? dataGrupos : [])
     } catch (e) { setJogos([]) } finally { setLoading(false) }
   }
 
-  // --- AÇÕES ---
+  // --- AÇÕES GERAIS ---
   async function criarEtapa() {
     if(!novaEtapa.titulo) return alert("Digite um nome para a etapa")
     setLoading(true)
     try {
       const res = await fetch('/api/admin/etapas', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-pin': pin }, body: JSON.stringify(novaEtapa) })
-      const data = await safeJson(res)
-      
-      await loadAll() // Recarrega lista de etapas
-      
+      await safeJson(res)
+      await loadAll() 
       setNovaEtapa({...novaEtapa, titulo: ''})
-      alert('Etapa criada! Selecione-a na lista abaixo para começar a gerenciar.')
-      // Não seleciona auto para evitar confusão, força o usuário a clicar na nova
+      alert('Etapa criada com sucesso!')
       setEtapaId('') 
       setJogos([])
       setTimesDaEtapa([])
@@ -100,7 +112,7 @@ export default function AdminJogos() {
   }
 
   async function excluirEtapa(id_para_excluir) {
-    if(!confirm("TEM CERTEZA? Isso apagará a etapa e TODOS os jogos/classificação dela.")) return;
+    if(!confirm("TEM CERTEZA? Isso apagará a etapa, todos os jogos e a classificação.")) return;
     setLoading(true)
     try {
         await fetch(`/api/admin/etapas?id=${id_para_excluir}`, { method: 'DELETE', headers: { 'x-admin-pin': pin } })
@@ -113,6 +125,7 @@ export default function AdminJogos() {
     } finally { setLoading(false) }
   }
 
+  // --- IMPORTAÇÃO DE TIMES ---
   function abrirSelecaoTimes() {
     if(!etapaId) return alert("Selecione a etapa antes.");
     setSelectedTeams(new Set())
@@ -129,16 +142,15 @@ export default function AdminJogos() {
     } finally { setLoading(false) }
   }
 
-  async function sortearGrupos() {
-    setLoading(true)
-    try {
-      await fetch('/api/admin/etapas/sortear-grupos', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-pin': pin }, body: JSON.stringify({ etapa_id: Number(etapaId) }) })
-      await selecionarEtapa(etapaId)
-    } finally { setLoading(false) }
-  }
-
+  // --- GERAÇÃO DE JOGOS (AUTO / SORTEIO) ---
   async function gerarJogosAuto() {
     if (!etapaId) return alert("Selecione uma etapa!");
+    
+    if(confirm("Deseja ver a animação do sorteio dos jogos? Clique OK para ir ao Sorteio Animado ou Cancelar para gerar direto aqui.")) {
+        router.push(`/admin/sorteio?etapa_id=${etapaId}`);
+        return;
+    }
+
     setLoading(true)
     try {
       const res = await fetch('/api/admin/sorteio', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-pin': pin }, body: JSON.stringify({ etapa_id: Number(etapaId), data_base: sorteioDataBase || null, modo: 'BINGO', limpar_existentes: sorteioLimpar }) })
@@ -148,6 +160,7 @@ export default function AdminJogos() {
     } finally { setLoading(false) }
   }
 
+  // --- AGENDA AUTOMÁTICA ---
   async function aplicarHorarios() {
     if (!etapaId) return alert("Selecione uma etapa!");
     if (!horData) return alert("Preencha a DATA DA RODADA.")
@@ -160,9 +173,10 @@ export default function AdminJogos() {
     } finally { setLoading(false) }
   }
 
+  // --- LIMPEZA E CRIAÇÃO MANUAL ---
   async function limparEtapa() {
     if (!etapaId) return alert("Selecione uma etapa!");
-    if(!confirm("ISSO APAGA TUDO DA ETAPA (JOGOS E TIMES). Confirmar?")) return;
+    if(!confirm("ATENÇÃO: ISSO APAGA TUDO DA ETAPA (JOGOS E VÍNCULOS DE TIMES). Confirmar?")) return;
     setLoading(true)
     try {
         await fetch('/api/admin/etapas/gerenciar-times', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-pin': pin }, body: JSON.stringify({ action: 'clear', etapa_id: etapaId }) })
@@ -171,6 +185,7 @@ export default function AdminJogos() {
   }
 
   async function atualizarJogo(payload) {
+    // Atualiza um jogo específico (placar, status, info)
     await fetch('/api/admin/jogos', { method: 'PUT', headers: { 'Content-Type': 'application/json', 'x-admin-pin': pin }, body: JSON.stringify(payload) })
     await selecionarEtapa(etapaId) 
   }
@@ -185,7 +200,7 @@ export default function AdminJogos() {
     try {
         const payload = { 
             ...novoJogo, 
-            etapa_id: Number(etapaId), // Garante que vai para a etapa selecionada
+            etapa_id: Number(etapaId), 
             equipe_a_id: parseInt(novoJogo.equipe_a_id), 
             equipe_b_id: parseInt(novoJogo.equipe_b_id),
             rodada: novoJogo.rodada ? parseInt(novoJogo.rodada) : 1
@@ -193,18 +208,21 @@ export default function AdminJogos() {
         const res = await fetch('/api/admin/jogos', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-pin': pin }, body: JSON.stringify(payload) });
         const data = await safeJson(res);
         if (!res.ok || data.error) alert(`Erro: ${data.error || 'Erro desconhecido'}`);
-        else { setNovoJogo({...novoJogo, equipe_a_id: '', equipe_b_id: '', rodada: ''}); await selecionarEtapa(etapaId); }
+        else { 
+            setNovoJogo({...novoJogo, equipe_a_id: '', equipe_b_id: '', rodada: ''}); 
+            await selecionarEtapa(etapaId); 
+        }
     } catch(e) { alert("Erro de conexão."); } finally { setLoading(false); }
   }
 
   async function gerarFinais() {
     if (!etapaId) return alert("Selecione uma etapa!");
-    if(!confirm("Gerar finais (1º vs 1º)?")) return;
+    if(!confirm("Gerar finais (1º do Grupo A vs 1º do Grupo B)?")) return;
     setLoading(true)
     try {
       const res = await fetch('/api/admin/etapas/gerar-finais', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-pin': pin }, body: JSON.stringify({ etapa_id: Number(etapaId) }) })
       const data = await safeJson(res)
-      if(data.success) { alert("Finais Geradas!"); await selecionarEtapa(etapaId); }
+      if(data.success) { alert("Finais e disputa de 3º lugar geradas!"); await selecionarEtapa(etapaId); }
       else alert(data.error)
     } finally { setLoading(false) }
   }
@@ -216,13 +234,13 @@ export default function AdminJogos() {
     return { A: a, B: b }
   }, [timesDaEtapa])
 
-  // --- LOGIN ---
+  // --- TELA DE LOGIN ---
   if (!authed) {
     return (
       <main className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
         <div className="bg-slate-900 p-12 rounded-[2rem] border border-slate-800 text-center max-w-sm w-full shadow-2xl">
           <div className="w-20 h-20 bg-blue-600 rounded-3xl rotate-6 flex items-center justify-center mx-auto mb-8 shadow-lg">
-             <Lock className="text-white" size={36}/>
+              <Lock className="text-white" size={36}/>
           </div>
           <h1 className="text-2xl font-black text-white uppercase mb-2">Acesso Jogos</h1>
           <input type="password" placeholder="PIN" className="w-full p-4 bg-slate-950 border border-slate-700 rounded-xl text-center text-white font-black text-4xl mb-6 outline-none focus:border-blue-600" value={pin} onChange={(e) => setPin(e.target.value)} maxLength={4} />
@@ -235,7 +253,7 @@ export default function AdminJogos() {
   return (
     <main className="min-h-screen bg-slate-50 py-10 px-4 md:px-10 relative text-slate-800">
       
-      {/* MODAL */}
+      {/* MODAL DE SELEÇÃO DE TIMES */}
       {showModalTimes && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
             <div className="bg-white w-full max-w-2xl rounded-3xl p-8 max-h-[80vh] flex flex-col shadow-2xl">
@@ -263,6 +281,7 @@ export default function AdminJogos() {
       )}
 
       <div className="max-w-7xl mx-auto">
+        {/* HEADER DO PAINEL */}
         <div className="flex justify-between items-center mb-8">
           <Link href="/admin" className="flex items-center gap-2 text-slate-500 hover:text-blue-600 font-bold text-sm uppercase"><ArrowLeft size={18} /> Voltar</Link>
           <div className="text-right">
@@ -294,11 +313,12 @@ export default function AdminJogos() {
 
         {etapaId ? (
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                {/* 2. PAINEL DE CONTROLE */}
+                {/* 2. PAINEL DE CONTROLE (RESUMO E AÇÕES) */}
                 <div className="bg-slate-900 text-white rounded-3xl shadow-2xl shadow-slate-400 p-8 relative overflow-hidden">
                     <div className="absolute top-0 right-0 p-8 opacity-5"><Trophy size={200}/></div>
                     
                     <div className="grid lg:grid-cols-3 gap-8 mb-8 relative z-10">
+                        {/* CARD TIMES */}
                         <div className="bg-white/5 p-6 rounded-3xl border border-white/10">
                             <p className="text-blue-400 text-[10px] font-black uppercase tracking-widest mb-4">Passo 1: Times</p>
                             <div className="flex justify-between items-end mb-6">
@@ -307,6 +327,7 @@ export default function AdminJogos() {
                             </div>
                             <button onClick={abrirSelecaoTimes} className="w-full bg-blue-600 hover:bg-blue-500 py-3 rounded-xl font-bold text-xs uppercase flex items-center justify-center gap-2"><Users size={16}/> Selecionar Times</button>
                         </div>
+                        {/* LISTA DE GRUPOS */}
                         <div className="lg:col-span-2 bg-white/5 p-6 rounded-3xl border border-white/10 grid grid-cols-2 gap-6 relative">
                             <div><p className="text-yellow-400 text-[10px] font-black uppercase tracking-widest mb-3 border-b border-white/10 pb-2">Grupo A</p><ul className="text-xs font-medium text-slate-300 space-y-1">{grupos.A.map(t => <li key={t.id}>• {t.nome_equipe}</li>)}</ul></div>
                             <div><p className="text-yellow-400 text-[10px] font-black uppercase tracking-widest mb-3 border-b border-white/10 pb-2">Grupo B</p><ul className="text-xs font-medium text-slate-300 space-y-1">{grupos.B.map(t => <li key={t.id}>• {t.nome_equipe}</li>)}</ul></div>
@@ -315,13 +336,15 @@ export default function AdminJogos() {
                               className="absolute top-4 right-4 bg-slate-800 hover:bg-slate-700 py-2 px-4 rounded-lg font-bold text-[10px] uppercase flex items-center justify-center gap-2 border border-white/10 text-white"
                             >
                               <Shuffle size={12}/> Abrir Sorteio Animado
-                            </Link></div>
+                            </Link>
+                        </div>
                     </div>
                     
+                    {/* AÇÕES DE GERAÇÃO E AGENDA */}
                     <div className="grid lg:grid-cols-4 gap-6 pt-8 border-t border-white/10 relative z-10">
                         <div className="col-span-2 flex items-center gap-4 bg-white/5 p-4 rounded-2xl border border-white/10">
                             <div className="flex-1"><p className="text-blue-400 text-[10px] font-black uppercase tracking-widest mb-1">Passo 2: Tabela</p><label className="text-[10px] flex items-center gap-2 cursor-pointer text-slate-400 hover:text-white transition-colors"><input type="checkbox" checked={sorteioLimpar} onChange={e=>setSorteioLimpar(e.target.checked)} className="accent-blue-500"/> Limpar jogos atuais ao gerar</label></div>
-                            <button onClick={gerarJogosAuto} className="bg-white text-slate-900 hover:bg-slate-200 px-6 py-3 rounded-xl font-black text-xs uppercase flex items-center gap-2"><ClipboardList size={16}/> Gerar Tabela</button>
+                            <button onClick={gerarJogosAuto} className="bg-white text-slate-900 hover:bg-slate-200 px-6 py-3 rounded-xl font-black text-xs uppercase flex items-center gap-2"><ClipboardList size={16}/> Gerar Tabela (Auto)</button>
                         </div>
                         <div className="col-span-2 bg-black/30 p-5 rounded-2xl border border-white/10 flex flex-col gap-4">
                             <p className="text-blue-400 text-[10px] font-black uppercase tracking-widest">Passo 3: Agenda Automática</p>
@@ -355,7 +378,7 @@ export default function AdminJogos() {
                     }
                 </div>
 
-                {/* MANUAL ADD */}
+                {/* JOGO MANUAL (BACKUP) */}
                 <div className="bg-slate-100 rounded-3xl p-6 border border-slate-200 opacity-60 hover:opacity-100 transition-all">
                     <p className="text-[10px] font-black uppercase text-slate-400 mb-3 tracking-widest">Adição Manual (Backup)</p>
                     <div className="flex gap-3 items-center flex-wrap">
@@ -391,6 +414,7 @@ export default function AdminJogos() {
   )
 }
 
+// --- COMPONENTE DO CARD DE JOGO (MODIFICADO) ---
 function GameCard({ jogo, onUpdate, busy, pin }) {
   const [ga, setGa] = useState(jogo.gols_a ?? '')
   const [gb, setGb] = useState(jogo.gols_b ?? '')
@@ -424,9 +448,9 @@ function GameCard({ jogo, onUpdate, busy, pin }) {
   async function loadSumula() {
     try {
       const [ev, ra, rb] = await Promise.all([
-        fetch(`/api/admin/jogos/eventos?jogo_id=${jogo.id}`, { headers: { 'x-admin-pin': pin } }).then(r=>r.json()),
-        fetch(`/api/admin/atletas?equipe_id=${jogo.equipe_a_id}`, { headers: { 'x-admin-pin': pin } }).then(r=>r.json()),
-        fetch(`/api/admin/atletas?equipe_id=${jogo.equipe_b_id}`, { headers: { 'x-admin-pin': pin } }).then(r=>r.json()),
+        fetch(`/api/admin/jogos/eventos?jogo_id=${jogo.id}`, { headers: { 'x-admin-pin': pin }, cache: 'no-store' }).then(r=>r.json()),
+        fetch(`/api/admin/atletas?equipe_id=${jogo.equipe_a_id}`, { headers: { 'x-admin-pin': pin }, cache: 'no-store' }).then(r=>r.json()),
+        fetch(`/api/admin/atletas?equipe_id=${jogo.equipe_b_id}`, { headers: { 'x-admin-pin': pin }, cache: 'no-store' }).then(r=>r.json()),
       ])
       setEventos(ev || []); setAtletasA(ra || []); setAtletasB(rb || [])
     } catch(e){}
@@ -454,12 +478,36 @@ function GameCard({ jogo, onUpdate, busy, pin }) {
       onUpdate(payload)
   }
 
+  // --- NOVA LÓGICA DE SELEÇÃO: PUXA NÚMERO DA CAMISA ---
+  const handleSelectAtleta = (e, listaAtletas) => {
+      const selectedId = e.target.value;
+      const atleta = listaAtletas.find(a => String(a.id) === String(selectedId));
+      
+      // Auto-preenche o número da camisa se disponível no cadastro
+      // Prioridade: Numero do cadastro -> Vazio
+      const camisaAuto = atleta?.numero ? String(atleta.numero) : '';
+      
+      setNovo({
+          ...novo, 
+          atleta_id: selectedId, 
+          camisa_no_jogo: camisaAuto // Preenche o campo camisa_no_jogo
+      });
+  };
+
   function renderEvento(ev) {
       const nomeTime = ev.equipe_id === jogo.equipe_a_id ? nomeA : nomeB
       const camisa = ev.camisa_no_jogo ? ` (#${ev.camisa_no_jogo})` : ''
       const min = ev.minuto ? `${ev.minuto}' ` : ''
       const obs = ev.observacao ? ` - ${ev.observacao}` : ''
-      return `${min}${ev.tipo} • ${nomeTime}${camisa}${obs}`
+      return (
+          <span className="flex items-center gap-2">
+              <span className="font-mono text-blue-600 w-8 text-right">{min}</span>
+              <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${ev.tipo === 'GOL' ? 'bg-green-100 text-green-700' : ev.tipo === 'VERMELHO' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>{ev.tipo}</span>
+              <span>{nomeTime}</span>
+              <span className="font-bold text-slate-900">{camisa}</span>
+              <span className="text-slate-400 italic">{obs}</span>
+          </span>
+      )
   }
 
   return (
@@ -514,7 +562,6 @@ function GameCard({ jogo, onUpdate, busy, pin }) {
               <button onClick={saveScore} className="bg-slate-100 p-3 rounded-xl text-slate-600 hover:bg-slate-200 hover:text-blue-600 transition-colors" title="Salvar Placar"><Save size={20}/></button>
               {jogo.status === 'EM_BREVE' && <button onClick={() => onUpdate({ action: 'set_status', id: jogo.id, status: 'EM_ANDAMENTO' })} className="bg-green-600 text-white px-6 py-2 rounded-xl font-black text-xs uppercase flex items-center gap-2 hover:bg-green-500 shadow-lg shadow-green-600/20 transition-all hover:scale-105"><PlayCircle size={18}/> Iniciar</button>}
               
-              {/* BOTÃO REABRIR (NOVO) */}
               {jogo.status === 'FINALIZADO' && (
                   <div className="flex gap-2">
                       <span className="bg-slate-800 text-white px-6 py-2 rounded-xl font-black text-xs uppercase flex items-center gap-2 cursor-default"><StopCircle size={18}/> Encerrado</span>
@@ -532,7 +579,21 @@ function GameCard({ jogo, onUpdate, busy, pin }) {
             <div className="grid grid-cols-7 gap-3 mb-4">
                 <select className="col-span-2 p-3 rounded-xl border border-slate-200 text-xs font-bold bg-white outline-none focus:border-blue-500" value={novo.tipo} onChange={e=>setNovo({...novo, tipo: e.target.value})}><option value="GOL">⚽ GOL</option><option value="AMARELO">🟨 AMARELO</option><option value="VERMELHO">🟥 VERMELHO</option></select>
                 <select className="col-span-2 p-3 rounded-xl border border-slate-200 text-xs font-bold bg-white outline-none focus:border-blue-500" value={novo.equipe} onChange={e=>setNovo({...novo, equipe: e.target.value, atleta_id: ''})}><option value="A">{nomeA}</option><option value="B">{nomeB}</option></select>
-                <select className="col-span-3 p-3 rounded-xl border border-slate-200 text-xs font-bold bg-white outline-none focus:border-blue-500" value={novo.atleta_id} onChange={e=>setNovo({...novo, atleta_id: e.target.value})}><option value="">Selecione Atleta...</option>{(novo.equipe === 'A' ? atletasA : atletasB).map(a=><option key={a.id} value={a.id}>{a.nome}</option>)}</select>
+                
+                {/* DROPDOWN COM NÚMERO DA CAMISA E AUTO-PREENCHIMENTO */}
+                <select 
+                    className="col-span-3 p-3 rounded-xl border border-slate-200 text-xs font-bold bg-white outline-none focus:border-blue-500" 
+                    value={novo.atleta_id} 
+                    onChange={(e) => handleSelectAtleta(e, novo.equipe === 'A' ? atletasA : atletasB)}
+                >
+                    <option value="">Selecione Atleta...</option>
+                    {(novo.equipe === 'A' ? atletasA : atletasB).map(a => (
+                        <option key={a.id} value={a.id}>
+                            {a.numero ? `#${a.numero} - ` : ''}{a.nome}
+                        </option>
+                    ))}
+                </select>
+
                 <input className="col-span-1 p-3 rounded-xl border border-slate-200 text-xs font-bold outline-none focus:border-blue-500" placeholder="Min" value={novo.minuto} onChange={e=>setNovo({...novo, minuto: e.target.value})} />
                 <input className="col-span-2 p-3 rounded-xl border border-slate-200 text-xs font-bold outline-none focus:border-blue-500" placeholder="Camisa" value={novo.camisa_no_jogo} onChange={e=>setNovo({...novo, camisa_no_jogo: e.target.value})} />
                 <input className="col-span-2 p-3 rounded-xl border border-slate-200 text-xs font-bold outline-none focus:border-blue-500" placeholder="Obs..." value={novo.observacao} onChange={e=>setNovo({...novo, observacao: e.target.value})} />
@@ -541,7 +602,7 @@ function GameCard({ jogo, onUpdate, busy, pin }) {
             <div className="space-y-2">
                 {eventos.map(ev => (
                     <div key={ev.id} className="flex justify-between items-center bg-white p-3 rounded-xl border border-slate-100 text-xs font-bold text-slate-600 shadow-sm hover:border-slate-200 transition-colors">
-                        <span>{renderEvento(ev)}</span>
+                        {renderEvento(ev)}
                         <button onClick={()=>delEvento(ev.id)} className="text-red-300 hover:text-red-500 transition-colors"><Trash2 size={14}/></button>
                     </div>
                 ))}

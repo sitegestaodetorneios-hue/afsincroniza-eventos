@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { revalidateTag } from 'next/cache'
 
 export const dynamic = 'force-dynamic'
 
@@ -53,13 +54,10 @@ export async function POST(request) {
     jogo_id: Number(body.jogo_id),
     equipe_id: Number(body.equipe_id),
     atleta_id: body.atleta_id ? Number(body.atleta_id) : null,
-
     tipo: String(body.tipo || '').toUpperCase(),
     minuto: toIntOrNull(body.minuto),
     tempo: body.tempo ? String(body.tempo) : null,
     observacao: body.observacao || null,
-
-    // ✅ NOVO: troca de camisa por jogo (opcional)
     camisa_no_jogo: toIntOrNull(body.camisa_no_jogo),
   }
 
@@ -70,20 +68,6 @@ export async function POST(request) {
     )
   }
 
-  if (!['GOL', 'AMARELO', 'VERMELHO'].includes(payload.tipo)) {
-    return NextResponse.json({ error: 'tipo inválido' }, { status: 400 })
-  }
-
-  // Se quiser obrigar atleta em GOL (recomendado), descomente:
-  // if (payload.tipo === 'GOL' && !payload.atleta_id) {
-  //   return NextResponse.json({ error: 'Para GOL, selecione o atleta.' }, { status: 400 })
-  // }
-
-  // valida camisa_no_jogo se veio
-  if (payload.camisa_no_jogo !== null && (payload.camisa_no_jogo < 0 || payload.camisa_no_jogo > 99)) {
-    return NextResponse.json({ error: 'camisa_no_jogo inválida' }, { status: 400 })
-  }
-
   const supabase = supabaseAdmin()
   const { data, error } = await supabase
     .from('jogo_eventos')
@@ -92,6 +76,11 @@ export async function POST(request) {
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  // ✅ LIMPEZA DE CACHE ON-DEMAND (Sincronizada)
+  revalidateTag('jogos-ao-vivo') // Atualiza as páginas Partidas e Ao Vivo
+  revalidateTag('tabela')        // Atualiza a Classificação e Artilharia
+
   return NextResponse.json({ ok: true, evento: data })
 }
 
@@ -106,6 +95,12 @@ export async function DELETE(request) {
 
   const supabase = supabaseAdmin()
   const { error } = await supabase.from('jogo_eventos').delete().eq('id', id)
+  
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  // ✅ LIMPEZA DE CACHE ON-DEMAND (Garantindo que a Tabela também atualize se remover um gol)
+  revalidateTag('jogos-ao-vivo')
+  revalidateTag('tabela')
+
   return NextResponse.json({ ok: true })
 }

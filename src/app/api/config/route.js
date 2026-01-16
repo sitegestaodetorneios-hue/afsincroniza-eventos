@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { revalidateTag } from 'next/cache' // ✅ IMPORTADO PARA O CACHE
 
 export const dynamic = 'force-dynamic'
 
@@ -23,7 +24,6 @@ function isAuthorized(request) {
   return pinHeader && pinHeader === adminPin
 }
 
-// remove chaves undefined para não sobrescrever sem querer
 function compact(obj) {
   return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined))
 }
@@ -43,7 +43,14 @@ export async function GET() {
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json(data)
+
+  // ✅ RESPOSTA COM ETIQUETA DE CACHE PARA A HOME
+  return NextResponse.json(data, {
+    headers: {
+        'Cache-Control': 's-maxage=60, stale-while-revalidate=300',
+        'x-nextjs-tags': 'config' // Tag que a Home usa
+    }
+  })
 }
 
 export async function PUT(request) {
@@ -65,7 +72,6 @@ export async function PUT(request) {
     return NextResponse.json({ error: e.message }, { status: 500 })
   }
 
-  // --- MAPEAMENTO DE TODOS OS CAMPOS EDITÁVEIS ---
   const updates = compact({
     // 1. Identidade & Contato
     nome_competicao: body.nome_competicao,
@@ -97,7 +103,7 @@ export async function PUT(request) {
     local_futsal: body.local_futsal,
     inicio_futsal: body.inicio_futsal,
     vagas_futsal: typeof body.vagas_futsal === 'number' ? body.vagas_futsal : undefined,
-    preco_futsal: typeof body.preco_futsal === 'number' ? body.preco_futsal : undefined, // 👈 SALVANDO PREÇO DINÂMICO
+    preco_futsal: typeof body.preco_futsal === 'number' ? body.preco_futsal : undefined,
 
     // 5. Configurações Society
     titulo_society: body.titulo_society,
@@ -105,7 +111,7 @@ export async function PUT(request) {
     local_society: body.local_society,
     inicio_society: body.inicio_society,
     vagas_society: typeof body.vagas_society === 'number' ? body.vagas_society : undefined,
-    preco_society: typeof body.preco_society === 'number' ? body.preco_society : undefined, // 👈 SALVANDO PREÇO DINÂMICO
+    preco_society: typeof body.preco_society === 'number' ? body.preco_society : undefined,
 
     // 6. Títulos Gerais e Rodapé
     titulo_modalidades: body.titulo_modalidades,
@@ -119,5 +125,9 @@ export async function PUT(request) {
     .eq('id', 1)
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  // ✅ LIMPA O CACHE DA HOME IMEDIATAMENTE APÓS EDIÇÃO
+  revalidateTag('config')
+
   return NextResponse.json({ success: true })
 }

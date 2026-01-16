@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { revalidateTag } from 'next/cache'
 
 export const dynamic = 'force-dynamic'
 
@@ -44,6 +45,11 @@ export async function POST(request) {
   const { error } = await supabase.from('jogos').insert([body])
   
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  // ✅ LIMPEZA DE CACHE ON-DEMAND: Novo jogo criado
+  revalidateTag('jogos-ao-vivo')
+  revalidateTag('tabela')
+
   return NextResponse.json({ ok: true })
 }
 
@@ -55,7 +61,6 @@ export async function PUT(request) {
     const body = await request.json()
     const { action, id } = body
 
-    // ATUALIZAÇÃO: Salva gols normais E pênaltis
     if (action === 'set_score') {
       await supabase.from('jogos').update({ 
           gols_a: body.gols_a, 
@@ -77,6 +82,10 @@ export async function PUT(request) {
           arbitro: body.arbitro 
       }).eq('id', id)
     }
+
+    // ✅ LIMPEZA DE CACHE ON-DEMAND: Placar, data ou status alterados
+    revalidateTag('jogos-ao-vivo')
+    revalidateTag('tabela')
 
     return NextResponse.json({ ok: true })
   } catch (e) {

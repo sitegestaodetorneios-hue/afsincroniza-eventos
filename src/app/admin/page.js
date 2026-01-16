@@ -40,10 +40,10 @@ export default function AdminPanel() {
       slogan: '', texto_empresa: '', missao: '', valores: '',
       status_futsal: 'EM_BREVE', titulo_futsal: '', desc_futsal: '', 
       local_futsal: '', inicio_futsal: '', vagas_futsal: 0,
-      preco_futsal: 150.00, // NOVO CAMPO
+      preco_futsal: 150.00,
       status_society: 'EM_BREVE', titulo_society: '', desc_society: '', 
       local_society: '', inicio_society: '', vagas_society: 0,
-      preco_society: 150.00, // NOVO CAMPO
+      preco_society: 150.00,
       texto_footer: '',
     }), []
   )
@@ -61,9 +61,9 @@ export default function AdminPanel() {
     setLoading(true)
     try {
       const [cfgRes, teamsRes, patroRes] = await Promise.all([
-        fetch('/api/config'),
-        fetch('/api/admin/teams', { headers: { 'x-admin-pin': senha } }),
-        fetch('/api/admin/patrocinios')
+        fetch('/api/config', { cache: 'no-store' }),
+        fetch('/api/admin/teams', { headers: { 'x-admin-pin': senha }, cache: 'no-store' }),
+        fetch('/api/admin/patrocinios', { cache: 'no-store' })
       ])
       
       const cfg = await cfgRes.json().catch(() => null)
@@ -115,8 +115,10 @@ export default function AdminPanel() {
       if(res.ok) {
         setNovoPatro({ nome_empresa: '', banner_url: '', video_url: '', link_destino: '', cota: 'CARROSSEL' })
         await carregarTudo()
+      } else {
+        alert("Erro ao salvar patrocinador.")
       }
-    } catch (e) { alert("Erro ao adicionar.") } finally { setLoading(false) }
+    } catch (e) { alert("Erro de conexão.") } finally { setLoading(false) }
   }
 
   async function excluirPatrocinio(id) {
@@ -382,10 +384,12 @@ export default function AdminPanel() {
                             <label className="text-[9px] font-bold uppercase text-slate-400 ml-1">Link da Imagem (Banner)</label>
                             <input className="w-full p-2 bg-white border border-slate-200 rounded-xl font-bold text-sm" placeholder="https://imgur.com/link-da-imagem.png" value={novoPatro.banner_url} onChange={e => setNovoPatro({...novoPatro, banner_url: e.target.value})} />
                         </div>
+                        {/* ✅ CAMPO DE VÍDEO MASTER REINTEGRADO */}
                         <div className="md:col-span-3">
                             <label className="text-[9px] font-bold uppercase text-slate-400 ml-1">Link do Vídeo (Apenas para MASTER - MP4)</label>
                             <input className="w-full p-2 bg-white border border-slate-200 rounded-xl font-bold text-sm" placeholder="https://link-do-video.mp4" value={novoPatro.video_url} onChange={e => setNovoPatro({...novoPatro, video_url: e.target.value})} />
                         </div>
+                        {/* ✅ CAMPO LINK DESTINO REINTEGRADO */}
                         <div className="md:col-span-3">
                             <label className="text-[9px] font-bold uppercase text-slate-400 ml-1">Link de Destino (Site/Insta)</label>
                             <input className="w-full p-2 bg-white border border-slate-200 rounded-xl font-bold text-sm" placeholder="https://instagram.com/marca" value={novoPatro.link_destino} onChange={e => setNovoPatro({...novoPatro, link_destino: e.target.value})} />

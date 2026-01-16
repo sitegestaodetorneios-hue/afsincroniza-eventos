@@ -16,7 +16,7 @@ function supabaseAdmin() {
     )
 }
 
-// GET: Lista times da etapa com seus grupos (A ou B)
+// GET: Lista times da etapa com seus grupos E ORDEM
 export async function GET(request) {
     if (!isAuthorized(request)) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
@@ -27,67 +27,80 @@ export async function GET(request) {
 
     const supabase = supabaseAdmin()
     
-    // Busca o vínculo e os dados da equipe
-    const { data, error } = await supabase
-        .from('etapa_equipes')
-        .select('id, grupo, equipe_id, equipes ( id, nome_equipe, cidade )')
-        .eq('etapa_id', etapa_id)
-        .order('grupo', { ascending: true }) // Ordena A primeiro, depois B
+    try {
+        // Busca o vínculo e os dados da equipe
+        const { data, error } = await supabase
+            .from('etapa_equipes')
+            // ✅ AJUSTE 1: Adicionei ordem_sorteio no select
+            .select('id, grupo, ordem_sorteio, equipe_id, equipes ( id, nome_equipe, cidade )')
+            .eq('etapa_id', etapa_id)
+            .order('grupo', { ascending: true }) 
+            .order('ordem_sorteio', { ascending: true }) // ✅ AJUSTE 2: Ordena pela posição salva
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-    // Limpa a resposta para ficar fácil de ler no front
-    const times = data.map(item => ({
-        id: item.equipe_id,
-        vinculo_id: item.id,
-        nome_equipe: item.equipes?.nome_equipe || 'Desconhecido',
-        cidade: item.equipes?.cidade,
-        grupo: item.grupo || 'A' // Se null, assume A
-    }))
+        // Limpa a resposta para ficar fácil de ler no front
+        const times = data.map(item => ({
+            id: item.equipe_id,
+            vinculo_id: item.id,
+            nome_equipe: item.equipes?.nome_equipe || 'Desconhecido',
+            cidade: item.equipes?.cidade,
+            grupo: item.grupo || 'A', // Se null, assume A
+            ordem: item.ordem_sorteio || 0 // ✅ AJUSTE 3: Envia a ordem para o front
+        }))
 
-    return NextResponse.json(times)
+        return NextResponse.json(times)
+
+    } catch (e) {
+        return NextResponse.json({ error: e.message }, { status: 500 })
+    }
 }
 
 // POST: Importar/Limpar
 export async function POST(request) {
-  if (!isAuthorized(request)) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
+    if (!isAuthorized(request)) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
-  const body = await request.json()
-  const { action, etapa_id, selected_ids } = body 
+    const body = await request.json()
+    const { action, etapa_id, selected_ids } = body 
 
-  if (!etapa_id) return NextResponse.json({ error: 'Etapa ID obrigatório' }, { status: 400 })
+    if (!etapa_id) return NextResponse.json({ error: 'Etapa ID obrigatório' }, { status: 400 })
 
-  const supabase = supabaseAdmin()
+    const supabase = supabaseAdmin()
 
-  try {
-    // LIMPAR TUDO DA ETAPA
-    if (action === 'clear') {
-        await supabase.from('jogos').delete().eq('etapa_id', etapa_id)
-        await supabase.from('etapa_equipes').delete().eq('etapa_id', etapa_id)
-        return NextResponse.json({ ok: true, msg: 'Etapa zerada com sucesso!' })
-    }
-
-    // IMPORTAR TIMES SELECIONADOS
-    if (action === 'import_selected') {
-        if (!selected_ids || !Array.isArray(selected_ids) || selected_ids.length === 0) {
-            return NextResponse.json({ error: 'Nenhum time selecionado.' }, { status: 400 })
+    try {
+        // LIMPAR TUDO DA ETAPA
+        if (action === 'clear') {
+            await supabase.from('jogos').delete().eq('etapa_id', etapa_id)
+            await supabase.from('etapa_equipes').delete().eq('etapa_id', etapa_id)
+            return NextResponse.json({ ok: true, msg: 'Etapa zerada com sucesso!' })
         }
 
-        const inserts = selected_ids.map(id => ({
-            etapa_id: Number(etapa_id),
-            equipe_id: Number(id),
-            grupo: 'A' // Entra no A por padrão, depois sorteia
-        }))
+        // IMPORTAR TIMES SELECIONADOS
+        if (action === 'import_selected') {
+            if (!selected_ids || !Array.isArray(selected_ids) || selected_ids.length === 0) {
+                return NextResponse.json({ error: 'Nenhum time selecionado.' }, { status: 400 })
+            }
 
-        const { error } = await supabase.from('etapa_equipes').upsert(inserts, { onConflict: 'etapa_id, equipe_id', ignoreDuplicates: true })
-        if (error) throw error;
+            const inserts = selected_ids.map(id => ({
+                etapa_id: Number(etapa_id),
+                equipe_id: Number(id),
+                grupo: 'A',        // Sua lógica original (todos no A)
+                ordem_sorteio: 0   // ✅ AJUSTE 4: Inicializa com ordem 0
+            }))
 
-        return NextResponse.json({ ok: true, msg: `${inserts.length} times adicionados!` })
+            // Mantive seu UPSERT que já funciona
+            const { error } = await supabase
+                .from('etapa_equipes')
+                .upsert(inserts, { onConflict: 'etapa_id, equipe_id', ignoreDuplicates: true })
+            
+            if (error) throw error;
+
+            return NextResponse.json({ ok: true, msg: `${inserts.length} times adicionados!` })
+        }
+
+        return NextResponse.json({ error: 'Ação inválida' }, { status: 400 })
+
+    } catch (e) {
+        return NextResponse.json({ error: e.message }, { status: 500 })
     }
-
-    return NextResponse.json({ error: 'Ação inválida' }, { status: 400 })
-
-  } catch (e) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
-  }
 }

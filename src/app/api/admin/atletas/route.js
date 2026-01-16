@@ -22,18 +22,34 @@ export async function GET(request) {
 
   const { searchParams } = new URL(request.url)
   const equipe_id = Number(searchParams.get('equipe_id') || 0)
+  
   if (!equipe_id) return NextResponse.json({ error: 'equipe_id obrigatório' }, { status: 400 })
 
   try {
     const supabase = supabaseAdmin()
+    
+    // 1. Busca usando o nome correto da coluna no banco (numero_camisa)
     const { data, error } = await supabase
       .from('atletas')
       .select('id, nome, rg, numero_camisa, equipe_id')
       .eq('equipe_id', equipe_id)
-      .order('numero_camisa', { ascending: true })
+      .order('numero_camisa', { ascending: true }) // Ordena pelo número
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    return NextResponse.json(data || [])
+
+    // 2. TRADUÇÃO (O Pulo do Gato):
+    // O Frontend espera "numero", mas o banco tem "numero_camisa".
+    // Aqui nós convertemos para garantir que a tela receba o que precisa.
+    const atletasFormatados = (data || []).map(atleta => ({
+        id: atleta.id,
+        nome: atleta.nome,
+        rg: atleta.rg,
+        equipe_id: atleta.equipe_id,
+        numero: atleta.numero_camisa // <--- AQUI ESTÁ A CORREÇÃO MÁGICA
+    }))
+
+    return NextResponse.json(atletasFormatados)
+
   } catch (e) {
     return NextResponse.json({ error: e.message }, { status: 500 })
   }

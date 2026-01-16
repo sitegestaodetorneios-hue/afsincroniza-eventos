@@ -14,17 +14,6 @@ function supabaseAdmin() {
   return createClient(url, key, { auth: { persistSession: false } })
 }
 
-// Função para embaralhar (Fisher-Yates)
-function shuffle(array) {
-  let currentIndex = array.length, randomIndex;
-  while (currentIndex != 0) {
-    randomIndex = Math.floor(Math.random() * currentIndex);
-    currentIndex--;
-    [array[currentIndex], array[randomIndex]] = [array[randomIndex], array[currentIndex]];
-  }
-  return array;
-}
-
 export async function POST(request) {
   if (!isAuthorized(request)) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
@@ -36,42 +25,32 @@ export async function POST(request) {
   const supabase = supabaseAdmin()
 
   try {
-    // 1. Buscar todas as equipes vinculadas a esta etapa
-    const { data: links, error: errFetch } = await supabase
-      .from('etapa_equipes')
-      .select('id, equipe_id, equipes(nome_equipe)')
-      .eq('etapa_id', etapa_id)
+    // SE VIER LISTA MANUAL (Do seu Sorteio Animado)
+    if (body.sorteio_manual && Array.isArray(body.sorteio_manual)) {
+        const manual = body.sorteio_manual;
+        const updates = [];
 
-    if (errFetch) throw errFetch
-    if (!links || links.length < 2) return NextResponse.json({ error: 'Poucas equipes para dividir em grupos.' }, { status: 400 })
+        // Atualiza UM POR UM para garantir a gravação correta da ORDEM
+        for (const item of manual) {
+            if (item.equipe_id && item.grupo) {
+                updates.push(
+                    supabase
+                        .from('etapa_equipes')
+                        .update({ 
+                            grupo: item.grupo,
+                            ordem_sorteio: item.ordem // <--- AQUI ESTÁ A SOLUÇÃO
+                        })
+                        .eq('equipe_id', Number(item.equipe_id)) // Procura pelo ID do Time
+                        .eq('etapa_id', etapa_id)                // Na etapa certa
+                )
+            }
+        }
 
-    // 2. Embaralhar para ser um sorteio justo
-    const sorteados = shuffle(links)
-
-    // 3. Dividir na metade (3 e 3)
-    const metade = Math.ceil(sorteados.length / 2)
-    const updates = []
-
-    for (let i = 0; i < sorteados.length; i++) {
-      const grupo = i < metade ? 'A' : 'B'
-      const item = sorteados[i]
-
-      // Adiciona promessa de atualização na lista
-      updates.push(
-        supabase
-          .from('etapa_equipes')
-          .update({ grupo: grupo })
-          .eq('id', item.id) // Atualiza pelo ID do vínculo
-      )
+        await Promise.all(updates);
+        return NextResponse.json({ ok: true, msg: 'Grupos e ordem salvos!' });
     }
 
-    // 4. Executar todas as atualizações
-    await Promise.all(updates)
-
-    return NextResponse.json({ 
-      ok: true, 
-      msg: `Sorteio realizado! ${metade} times no Grupo A e ${sorteados.length - metade} no Grupo B.` 
-    })
+    return NextResponse.json({ error: 'Nenhum dado manual enviado.' }, { status: 400 })
 
   } catch (e) {
     return NextResponse.json({ error: e.message }, { status: 500 })

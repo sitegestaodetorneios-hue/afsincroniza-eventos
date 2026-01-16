@@ -31,17 +31,19 @@ function waLink(number, text) {
 
 export default function Home() {
   const [siteData, setSiteData] = useState(null)
-  const [patrocinios, setPatrocinios] = useState([]) // Estado para os patrocinadores
+  const [patrocinios, setPatrocinios] = useState([]) 
 
   useEffect(() => {
-    // Carrega configurações e patrocinadores simultaneamente
+    // ✅ CACHE ON-DEMAND: Usamos 'no-store' no cliente para garantir que
+    // o navegador sempre pergunte ao servidor (que entregará o cache rápido da Vercel)
     Promise.all([
-      fetch('/api/config').then(res => res.json()),
-      fetch('/api/admin/patrocinios').then(res => res.json())
+      fetch('/api/config', { cache: 'no-store' }).then(res => res.json()),
+      fetch('/api/admin/patrocinios', { cache: 'no-store' }).then(res => res.json())
     ]).then(([config, patro]) => {
       setSiteData(config || {})
       setPatrocinios(Array.isArray(patro) ? patro : [])
-    }).catch(() => {
+    }).catch((err) => {
+      console.error("Erro ao carregar Home:", err)
       setSiteData({})
       setPatrocinios([])
     })
@@ -68,7 +70,7 @@ export default function Home() {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center gap-4">
         <Loader2 className="animate-spin text-blue-600" size={48} />
-        <p className="text-slate-400 font-bold uppercase tracking-widest text-xs animate-pulse">Carregando…</p>
+        <p className="text-slate-400 font-bold uppercase tracking-widest text-xs animate-pulse">Carregando Portal...</p>
       </div>
     )
   }
@@ -100,7 +102,7 @@ export default function Home() {
       </div>
 
       {/* NAVBAR */}
-      <nav className="bg-white/80 backdrop-blur-md border-b border-slate-200 py-4 px-6 md:px-12 flex flex-col lg:flex-row justify-between items-center sticky top-0 z-50">
+      <nav className="bg-white/80 backdrop-blur-md border-b border-slate-200 py-4 px-6 md:px-12 flex flex-col lg:flex-row justify-between items-center sticky top-0 z-50 transition-all">
         <div className="flex items-center gap-3 mb-4 lg:mb-0">
           <div className="bg-white border border-slate-200 p-2 rounded-xl shadow-sm">
             <img src={logoUrl} alt={defs.companyName} className="h-10 w-auto object-contain" />
@@ -111,8 +113,8 @@ export default function Home() {
           </div>
         </div>
 
-        {/* MATCH CENTER MENU */}
-        <div className="flex gap-2 bg-slate-100 p-1 rounded-lg border border-slate-200 mb-4 lg:mb-0">
+        {/* MATCH CENTER MENU (BOTÕES DE AÇÃO RÁPIDA) */}
+        <div className="flex gap-2 bg-slate-100 p-1 rounded-lg border border-slate-200 mb-4 lg:mb-0 shadow-inner">
             <Link href="/ao-vivo"><button className="flex items-center gap-2 px-3 py-2 rounded-md font-black text-[10px] uppercase bg-white text-red-600 shadow-sm hover:scale-105 transition-transform border border-slate-100"><Radio size={12} className="animate-pulse"/> Ao Vivo</button></Link>
             <Link href="/tabela"><button className="flex items-center gap-2 px-3 py-2 rounded-md font-bold text-[10px] uppercase text-slate-600 hover:bg-white hover:text-blue-600 transition-colors"><Trophy size={12}/> Tabela</button></Link>
             <Link href="/partidas"><button className="flex items-center gap-2 px-3 py-2 rounded-md font-bold text-[10px] uppercase text-slate-600 hover:bg-white hover:text-blue-600 transition-colors"><Calendar size={12}/> Jogos</button></Link>
@@ -131,12 +133,12 @@ export default function Home() {
         <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-blue-50 via-slate-50 to-white -z-10" />
         <div className="max-w-7xl mx-auto grid lg:grid-cols-2 gap-16 items-center">
           <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-100/50 text-blue-700 text-[10px] font-black uppercase tracking-widest mb-6 border border-blue-100">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-100/50 text-blue-700 text-[10px] font-black uppercase tracking-widest mb-6 border border-blue-100 animate-in fade-in slide-in-from-left-4 duration-700">
               <span className="w-2 h-2 rounded-full bg-blue-600 animate-ping" /> Temporada 2026
             </div>
             <h1 className="text-5xl md:text-7xl lg:text-8xl font-black text-slate-900 leading-[0.9] tracking-tighter mb-7">{heroTitle}</h1>
             <p className="text-slate-500 text-lg md:text-xl mb-7 max-w-xl leading-relaxed font-medium">{heroSubtitle}</p>
-            <p className="text-slate-700 font-bold mb-8">{defs.slogan}</p>
+            <p className="text-slate-700 font-bold mb-8 italic">{defs.slogan}</p>
             <div className="flex flex-col sm:flex-row gap-4">
               {algumaInscricaoAberta ? (
                   <a href="#competicoes" className="group"><button className="w-full sm:w-auto bg-slate-900 text-white font-bold px-8 py-5 rounded-2xl hover:bg-blue-600 transition-all shadow-xl flex items-center justify-center gap-3">VER COMPETIÇÕES <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" /></button></a>
@@ -146,15 +148,15 @@ export default function Home() {
               <a href="#inscricao"><button className="w-full sm:w-auto bg-white text-slate-900 border-2 border-slate-200 font-bold px-8 py-5 rounded-2xl hover:bg-slate-50 transition-all flex items-center justify-center gap-2"><PlayCircle size={18} /> COMO FUNCIONA</button></a>
             </div>
             <div className="mt-10 grid grid-cols-3 gap-4 pt-8 border-t border-slate-200/60 text-center">
-              <div className="bg-white border border-slate-200 rounded-2xl p-5">
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
                 <p className="text-2xl font-black text-slate-900">{totalVagas || '—'}</p>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Vagas totais</p>
               </div>
-              <div className="bg-white border border-slate-200 rounded-2xl p-5">
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
                 <p className="text-2xl font-black text-slate-900">Sub 08–16</p>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Masc.</p>
               </div>
-              <div className="bg-white border border-slate-200 rounded-2xl p-5">
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
                 <p className="text-2xl font-black text-slate-900">Final</p>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Fem.</p>
               </div>
@@ -169,7 +171,7 @@ export default function Home() {
               <div className="absolute bottom-0 left-0 p-8 w-full">
                 <div className="bg-white/10 backdrop-blur-md border border-white/20 p-6 rounded-2xl">
                   <p className="text-blue-300 font-black uppercase text-xs tracking-widest mb-2 flex items-center gap-2"><Trophy size={14}/> Match Center</p>
-                  <p className="text-white text-sm mb-4 font-bold">Classificação e estatísticas em tempo real.</p>
+                  <p className="text-white text-sm mb-4 font-bold">Classificação, Artilharia e Goleiro Menos Vazado em tempo real.</p>
                   <div className="grid grid-cols-2 gap-2">
                       <Link href="/tabela" className="bg-white/20 hover:bg-white/30 text-white text-[10px] font-black uppercase py-2 rounded-lg text-center transition-colors">Ver Tabela</Link>
                       <Link href="/partidas" className="bg-white/20 hover:bg-white/30 text-white text-[10px] font-black uppercase py-2 rounded-lg text-center transition-colors">Todos os Jogos</Link>
@@ -185,17 +187,17 @@ export default function Home() {
       {master && (
         <section className="max-w-7xl mx-auto px-6 md:px-12 mb-20 animate-in fade-in zoom-in duration-1000">
            <div className="bg-white p-2 rounded-[2.5rem] border border-slate-200 shadow-2xl overflow-hidden relative group">
-              <a href={master.link_destino || '#'} target="_blank">
-                {master.video_url ? (
-                  <div className="relative aspect-[16/6] md:aspect-[21/6] w-full rounded-[2rem] overflow-hidden bg-slate-900">
-                    <video src={master.video_url} autoPlay loop muted playsInline className="w-full h-full object-cover opacity-90" />
-                    <div className="absolute top-4 right-4 bg-black/40 backdrop-blur-md p-2 rounded-full text-white/80"><Volume2 size={16}/></div>
-                  </div>
-                ) : (
-                  <img src={master.banner_url} className="w-full h-auto rounded-[2rem] object-cover transition-transform duration-1000 group-hover:scale-[1.02]" alt="Sponsor" />
-                )}
-                <div className="absolute top-6 left-10"><span className="bg-slate-900/80 backdrop-blur-md text-white text-[9px] font-black uppercase tracking-[0.3em] px-4 py-1.5 rounded-full border border-white/20">Patrocinador Master</span></div>
-              </a>
+             <a href={master.link_destino || '#'} target="_blank">
+               {master.video_url ? (
+                 <div className="relative aspect-[16/6] md:aspect-[21/6] w-full rounded-[2rem] overflow-hidden bg-slate-900">
+                   <video src={master.video_url} autoPlay loop muted playsInline className="w-full h-full object-cover opacity-90" />
+                   <div className="absolute top-4 right-4 bg-black/40 backdrop-blur-md p-2 rounded-full text-white/80"><Volume2 size={16}/></div>
+                 </div>
+               ) : (
+                 <img src={master.banner_url} className="w-full h-auto rounded-[2rem] object-cover transition-transform duration-1000 group-hover:scale-[1.02]" alt="Sponsor" />
+               )}
+               <div className="absolute top-6 left-10"><span className="bg-slate-900/80 backdrop-blur-md text-white text-[9px] font-black uppercase tracking-[0.3em] px-4 py-1.5 rounded-full border border-white/20">Patrocinador Master</span></div>
+             </a>
            </div>
         </section>
       )}
@@ -215,12 +217,12 @@ export default function Home() {
             </div>
           </div>
           <div className="grid sm:grid-cols-2 gap-6">
-            <div className="bg-slate-50 border border-slate-200 rounded-[2rem] p-7">
+            <div className="bg-slate-50 border border-slate-200 rounded-[2rem] p-7 shadow-sm">
               <div className="w-12 h-12 rounded-2xl bg-blue-600 text-white flex items-center justify-center mb-5"><Sparkles size={22} /></div>
               <p className="font-black text-slate-900 text-xl mb-2">Missão</p>
               <p className="text-slate-500 text-sm font-medium">{defs.missao}</p>
             </div>
-            <div className="bg-slate-50 border border-slate-200 rounded-[2rem] p-7">
+            <div className="bg-slate-50 border border-slate-200 rounded-[2rem] p-7 shadow-sm">
               <div className="w-12 h-12 rounded-2xl bg-slate-900 text-white flex items-center justify-center mb-5"><ShieldCheck size={22} /></div>
               <p className="font-black text-slate-900 text-xl mb-2">Valores</p>
               <p className="text-slate-500 text-sm font-medium">{defs.valores}</p>
@@ -237,8 +239,7 @@ export default function Home() {
         </div>
         <div className="max-w-7xl mx-auto grid md:grid-cols-2 gap-8 lg:gap-12">
             {/* FUTSAL CARD */}
-            <div className="bg-white border border-slate-200 p-8 md:p-10 rounded-[2.5rem] hover:shadow-2xl transition-all duration-300 relative overflow-hidden">
-              {/* VALOR DA INSCRIÇÃO ADICIONADO */}
+            <div className="bg-white border border-slate-200 p-8 md:p-10 rounded-[2.5rem] hover:shadow-2xl transition-all duration-300 relative overflow-hidden group">
               <div className="absolute top-0 right-0 bg-blue-600 text-white px-6 py-2 rounded-bl-3xl font-black text-sm shadow-md italic z-20">
                 R$ {siteData?.preco_futsal || '150,00'}
               </div>
@@ -258,8 +259,7 @@ export default function Home() {
             </div>
 
             {/* SUICO CARD */}
-            <div className="bg-white border border-slate-200 p-8 md:p-10 rounded-[2.5rem] hover:shadow-2xl transition-all duration-300 relative overflow-hidden">
-              {/* VALOR DA INSCRIÇÃO ADICIONADO */}
+            <div className="bg-white border border-slate-200 p-8 md:p-10 rounded-[2.5rem] hover:shadow-2xl transition-all duration-300 relative overflow-hidden group">
               <div className="absolute top-0 right-0 bg-green-600 text-white px-6 py-2 rounded-bl-3xl font-black text-sm shadow-md italic z-20">
                 R$ {siteData?.preco_society || '150,00'}
               </div>
@@ -286,19 +286,19 @@ export default function Home() {
           <h2 className="text-xs font-black uppercase tracking-[0.4em] text-blue-600 mb-4 bg-blue-50 inline-block px-4 py-2 rounded-full">INSCRIÇÃO</h2>
           <p className="text-4xl md:text-5xl font-black text-slate-900 uppercase italic tracking-tighter mb-16">Como funciona</p>
           <div className="grid md:grid-cols-3 gap-8">
-            <div className="bg-slate-50 border border-slate-200 rounded-[2rem] p-8 text-left">
+            <div className="bg-slate-50 border border-slate-200 rounded-[2rem] p-8 text-left hover:border-blue-200 transition-colors">
               <div className="w-12 h-12 rounded-2xl bg-slate-900 text-white flex items-center justify-center mb-6"><FileText size={22} /></div>
               <p className="font-black text-slate-900 text-xl mb-2">1) Regulamento</p>
               <p className="text-slate-500 text-sm font-medium leading-relaxed">Leia as regras e critérios. Aceite o termo de imagem.</p>
               <Link href="/regulamento"><button className="w-full mt-6 bg-white border-2 border-slate-200 font-bold py-3 rounded-2xl hover:bg-slate-50 transition-all">Abrir regulamento</button></Link>
             </div>
-            <div className="bg-slate-50 border border-slate-200 rounded-[2rem] p-8 text-left">
+            <div className="bg-slate-50 border border-slate-200 rounded-[2rem] p-8 text-left hover:border-blue-200 transition-colors">
               <div className="w-12 h-12 rounded-2xl bg-blue-600 text-white flex items-center justify-center mb-6"><CreditCard size={22} /></div>
               <p className="font-black text-slate-900 text-xl mb-2">2) Inscrição + Pix</p>
               <p className="text-slate-500 text-sm font-medium leading-relaxed">Preencha os dados do time e finalize o pagamento via Pix.</p>
               <Link href="/inscricao"><button className="w-full mt-6 bg-slate-900 text-white font-bold py-3 rounded-2xl hover:bg-blue-600 transition-all flex items-center justify-center gap-2">Inscrever equipe <ArrowRight size={18} /></button></Link>
             </div>
-            <div className="bg-slate-50 border border-slate-200 rounded-[2rem] p-8 text-left">
+            <div className="bg-slate-50 border border-slate-200 rounded-[2rem] p-8 text-left hover:border-blue-200 transition-colors">
               <div className="w-12 h-12 rounded-2xl bg-green-600 text-white flex items-center justify-center mb-6"><LogIn size={22} /></div>
               <p className="font-black text-slate-900 text-xl mb-2">3) Área do Professor</p>
               <p className="text-slate-500 text-sm font-medium leading-relaxed">Cadastre atletas e acompanhe status regular para o jogo.</p>
@@ -342,7 +342,7 @@ export default function Home() {
             </div>
             <Link href="/admin"><button className="text-[10px] font-bold uppercase tracking-widest text-slate-700 bg-slate-800 px-4 py-2 rounded-lg hover:bg-slate-700 hover:text-white transition-all">Acesso Administrativo</button></Link>
 
-            {/* CRÉDITOS DO DESENVOLVEDOR - EXATAMENTE COMO VOCÊ QUER */}
+            {/* CRÉDITOS RC ENTERPRISE */}
             <div className="flex items-center gap-3 bg-white/5 px-4 py-2.5 rounded-xl border border-white/5 group hover:border-blue-600/50 transition-all duration-500 mt-4">
                 <div className="w-7 h-7 rounded bg-blue-600/10 flex items-center justify-center">
                     <Code size={14} className="text-blue-500 group-hover:scale-110 transition-transform" />

@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Trophy, Shield, AlertTriangle, Loader2 } from 'lucide-react'
+import { ArrowLeft, Trophy, Shield, AlertTriangle, Loader2, Printer, Lock } from 'lucide-react'
 
 async function safeJson(res) {
   try { return await res.json() } catch { return {} }
@@ -22,7 +22,11 @@ export default function AdminRankings() {
   }
 
   async function loadEtapas() {
-    const res = await fetch('/api/admin/etapas', { headers: { 'x-admin-pin': pin } })
+    // Busca etapas sem cache para garantir lista atualizada
+    const res = await fetch('/api/admin/etapas', { 
+        headers: { 'x-admin-pin': pin },
+        cache: 'no-store' 
+    })
     const et = await safeJson(res)
     setEtapas(Array.isArray(et) ? et : [])
   }
@@ -30,7 +34,10 @@ export default function AdminRankings() {
   async function loadRankings(id) {
     setLoading(true)
     try {
-      const res = await fetch(`/api/admin/rankings?etapa_id=${id}`, { headers: { 'x-admin-pin': pin } })
+      const res = await fetch(`/api/admin/rankings?etapa_id=${id}`, { 
+          headers: { 'x-admin-pin': pin },
+          cache: 'no-store'
+      })
       const d = await safeJson(res)
       if (!res.ok) return alert(d?.error || 'Erro ao carregar rankings')
       setData(d)
@@ -41,31 +48,33 @@ export default function AdminRankings() {
 
   useEffect(() => {
     if (authed) loadEtapas()
-    // eslint-disable-next-line
   }, [authed])
 
   useEffect(() => {
     if (authed && etapaId) loadRankings(etapaId)
-    // eslint-disable-next-line
   }, [etapaId])
 
   if (!authed) {
     return (
       <main className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
-        <div className="bg-slate-900 p-10 rounded-2xl border border-slate-800 text-center max-w-sm w-full">
-          <h1 className="text-2xl font-black text-white uppercase mb-6">Admin • Rankings</h1>
+        <div className="bg-slate-900 p-10 rounded-2xl border border-slate-800 text-center max-w-sm w-full shadow-2xl">
+          <div className="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center mx-auto mb-6 shadow-[0_0_20px_rgba(37,99,235,0.5)]">
+            <Lock className="text-white" size={32}/>
+          </div>
+          <h1 className="text-2xl font-black text-white uppercase mb-6 tracking-widest">Relatórios</h1>
           <input
             type="password"
-            placeholder="PIN"
-            className="w-full p-4 bg-slate-950 border border-slate-800 rounded-xl text-center text-white font-bold text-xl mb-4"
+            placeholder="PIN DE SEGURANÇA"
+            className="w-full p-4 bg-slate-950 border border-slate-800 rounded-xl text-center text-white font-bold text-xl mb-6 tracking-[0.5em] outline-none focus:border-blue-600 transition-colors"
             value={pin}
             onChange={(e) => setPin(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && auth()}
           />
-          <button onClick={auth} className="w-full bg-blue-600 text-white font-bold py-4 rounded-xl uppercase">
-            Entrar
+          <button onClick={auth} className="w-full bg-blue-600 text-white font-bold py-4 rounded-xl uppercase hover:bg-blue-500 transition-all">
+            Acessar Dados
           </button>
-          <Link href="/admin" className="block mt-4 text-xs font-bold text-slate-400 hover:text-slate-200 uppercase">
-            Voltar ao Admin
+          <Link href="/admin" className="block mt-6 text-xs font-bold text-slate-500 hover:text-white uppercase tracking-widest transition-colors">
+            ← Voltar ao Painel
           </Link>
         </div>
       </main>
@@ -73,97 +82,133 @@ export default function AdminRankings() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 py-10 px-4 md:px-10">
-      <div className="max-w-6xl mx-auto">
-        <div className="flex justify-between items-center mb-8">
+    <main className="min-h-screen bg-slate-50 py-10 px-4 md:px-10 font-sans text-slate-800">
+      <div className="max-w-7xl mx-auto">
+        <div className="flex justify-between items-center mb-8 print:hidden">
           <Link href="/admin" className="flex items-center gap-2 text-slate-500 hover:text-blue-600 font-bold text-sm uppercase transition-colors">
-            <ArrowLeft size={18} /> Voltar
+            <ArrowLeft size={18} /> Voltar ao Painel
           </Link>
-          <h1 className="text-2xl font-black uppercase italic tracking-tighter text-slate-900">
-            Rankings
-          </h1>
+          <div className="flex items-center gap-4">
+             <button onClick={() => window.print()} className="bg-white border border-slate-200 text-slate-600 p-2 rounded-lg hover:text-blue-600 transition-colors" title="Imprimir Relatório">
+                <Printer size={20}/>
+             </button>
+             <h1 className="text-2xl font-black uppercase italic tracking-tighter text-slate-900">
+                Relatórios Oficiais
+             </h1>
+          </div>
         </div>
 
-        <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 mb-8">
-          <p className="text-xs font-black uppercase text-slate-400 mb-3">Selecione a etapa</p>
-          <div className="flex flex-col md:flex-row gap-3">
-            <select
-              className="p-3 rounded-xl border bg-slate-50 font-bold flex-1"
-              value={etapaId}
-              onChange={(e) => setEtapaId(e.target.value)}
-            >
-              <option value="">— selecione —</option>
-              {etapas.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.modalidade} • {e.titulo} (ID {e.id})
-                </option>
-              ))}
-            </select>
-
+        <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm p-6 mb-8 print:hidden">
+          <div className="flex flex-col md:flex-row gap-4 items-end">
+            <div className="flex-1 w-full">
+                <label className="text-[10px] font-black uppercase text-slate-400 mb-2 block tracking-widest">Selecionar Campeonato / Etapa</label>
+                <select
+                  className="w-full p-4 rounded-xl border border-slate-200 bg-slate-50 font-bold text-sm outline-none focus:border-blue-500 transition-colors"
+                  value={etapaId}
+                  onChange={(e) => setEtapaId(e.target.value)}
+                >
+                  <option value="">— Selecione para carregar —</option>
+                  {etapas.map((e) => (
+                    <option key={e.id} value={e.id}>
+                      {e.status === 'EM_ANDAMENTO' ? '🟢' : '⚫'} {e.titulo} ({e.modalidade})
+                    </option>
+                  ))}
+                </select>
+            </div>
             <button
               onClick={() => etapaId && loadRankings(etapaId)}
-              className="bg-slate-900 text-white font-black rounded-xl px-5 py-3 uppercase text-xs hover:bg-blue-600"
+              className="bg-slate-900 text-white font-black rounded-xl px-8 py-4 uppercase text-xs hover:bg-blue-600 transition-all shadow-lg"
             >
-              Atualizar
+              Atualizar Dados
             </button>
           </div>
         </div>
 
         {loading ? (
-          <div className="p-12 flex items-center justify-center gap-3 text-slate-400 font-bold">
-            <Loader2 className="animate-spin" /> Carregando…
+          <div className="p-20 flex flex-col items-center justify-center gap-4 text-slate-400 font-bold">
+            <Loader2 className="animate-spin text-blue-600" size={48} />
+            <p className="text-xs uppercase tracking-widest">Calculando estatísticas...</p>
           </div>
         ) : !data ? (
-          <div className="p-10 text-center text-slate-400 font-bold">
-            Selecione uma etapa para ver rankings.
+          <div className="p-20 text-center text-slate-400 font-bold bg-white rounded-[2rem] border border-dashed border-slate-300">
+            Selecione uma etapa acima para visualizar os rankings técnicos.
           </div>
         ) : (
-          <div className="grid lg:grid-cols-3 gap-6">
-            <Card title="Artilharia" icon={<Trophy size={18} className="text-blue-600" />}>
+          <div className="grid lg:grid-cols-3 gap-8">
+            
+            {/* ARTILHARIA */}
+            <Card title="Artilharia (Gols Pró)" icon={<Trophy size={18} className="text-yellow-500" />} headerColor="bg-slate-900 text-white">
               {(data.artilharia || []).length === 0 ? (
                 <Empty />
               ) : (
                 <List>
-                  {data.artilharia.map((a) => (
+                  {data.artilharia.map((a, i) => (
                     <Row
                       key={a.atleta_id}
-                      left={`#${a.camisa_cadastro ?? '-'} ${a.atleta_nome}`}
-                      right={`${a.gols} gols`}
-                      sub={a.nome_equipe}
+                      rank={i + 1}
+                      left={
+                        <div>
+                            <span className="font-black text-slate-900 text-sm uppercase">{a.atleta_nome}</span>
+                            <span className="text-[10px] font-bold text-slate-400 block mt-0.5">Camisa #{a.camisa_cadastro ?? '?'} • {a.nome_equipe}</span>
+                        </div>
+                      }
+                      right={<span className="text-lg font-black text-yellow-600 bg-yellow-50 px-3 py-1 rounded-lg border border-yellow-100">{a.gols}</span>}
                     />
                   ))}
                 </List>
               )}
             </Card>
 
-            <Card title="Menos vazado (equipe)" icon={<Shield size={18} className="text-green-600" />}>
+            {/* MELHOR DEFESA */}
+            <Card title="Melhor Defesa (Goleiro)" icon={<Shield size={18} className="text-blue-500" />} headerColor="bg-white border-b border-slate-100 text-slate-900">
               {(data.menosVazado || []).length === 0 ? (
                 <Empty />
               ) : (
                 <List>
-                  {data.menosVazado.map((t) => (
+                  {data.menosVazado.map((t, i) => (
                     <Row
                       key={t.equipe_id}
-                      left={t.nome_equipe}
-                      right={`${t.gc} sofridos`}
-                      sub={`J ${t.j} • SG ${t.sg}`}
+                      rank={i + 1}
+                      left={
+                        <div>
+                            <span className="font-black text-slate-900 text-sm uppercase">{t.nome_equipe}</span>
+                            <span className="text-[10px] font-bold text-slate-400 block mt-0.5">Jogos: {t.j} • Saldo: {t.sg}</span>
+                        </div>
+                      }
+                      right={
+                        <div className="text-right">
+                            <span className="text-lg font-black text-blue-600 block leading-none">{t.gc}</span>
+                            <span className="text-[8px] font-bold text-slate-400 uppercase">Gols</span>
+                        </div>
+                      }
                     />
                   ))}
                 </List>
               )}
             </Card>
 
-            <Card title="Disciplina" icon={<AlertTriangle size={18} className="text-amber-600" />}>
+            {/* DISCIPLINA (FAIR PLAY) */}
+            <Card title="Controle Disciplinar" icon={<AlertTriangle size={18} className="text-red-500" />} headerColor="bg-white border-b border-slate-100 text-slate-900">
               {(data.disciplina || []).length === 0 ? (
                 <Empty />
               ) : (
                 <List>
-                  {data.disciplina.map((d) => (
+                  {data.disciplina.map((d, i) => (
                     <Row
                       key={d.atleta_id}
-                      left={`#${d.camisa_cadastro ?? '-'} ${d.atleta_nome}`}
-                      right={`🟥 ${d.vermelhos}  🟨 ${d.amarelos}`}
-                      sub={d.nome_equipe}
+                      rank={i + 1}
+                      left={
+                        <div>
+                            <span className="font-bold text-slate-700 text-xs uppercase">{d.atleta_nome}</span>
+                            <span className="text-[9px] font-bold text-slate-400 block mt-0.5">{d.nome_equipe}</span>
+                        </div>
+                      }
+                      right={
+                        <div className="flex gap-2">
+                            {d.vermelhos > 0 && <span className="bg-red-100 text-red-700 border border-red-200 px-2 py-0.5 rounded text-[10px] font-black" title="Cartões Vermelhos">{d.vermelhos} CV</span>}
+                            {d.amarelos > 0 && <span className="bg-yellow-100 text-yellow-700 border border-yellow-200 px-2 py-0.5 rounded text-[10px] font-black" title="Cartões Amarelos">{d.amarelos} CA</span>}
+                        </div>
+                      }
                     />
                   ))}
                 </List>
@@ -176,34 +221,42 @@ export default function AdminRankings() {
   )
 }
 
-function Card({ title, icon, children }) {
+function Card({ title, icon, children, headerColor }) {
   return (
-    <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6">
-      <div className="flex items-center gap-2 mb-4">
+    <div className="bg-white rounded-[2rem] border border-slate-200 shadow-xl overflow-hidden flex flex-col h-full">
+      <div className={`p-6 flex items-center gap-3 ${headerColor}`}>
         {icon}
-        <h2 className="font-black uppercase text-slate-900">{title}</h2>
+        <h2 className="font-black uppercase tracking-widest text-xs">{title}</h2>
       </div>
-      {children}
+      <div className="p-6 flex-1 bg-slate-50/50">
+        {children}
+      </div>
     </div>
   )
 }
 
 function List({ children }) {
-  return <div className="space-y-2">{children}</div>
+  return <div className="space-y-3">{children}</div>
 }
 
-function Row({ left, right, sub }) {
+function Row({ rank, left, right }) {
   return (
-    <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 flex items-center justify-between">
-      <div>
-        <p className="font-black text-slate-900 text-sm">{left}</p>
-        <p className="text-xs font-bold text-slate-500">{sub}</p>
+    <div className="bg-white border border-slate-100 rounded-xl p-3 flex items-center justify-between shadow-sm hover:shadow-md transition-shadow">
+      <div className="flex items-center gap-3">
+        <span className={`text-[10px] font-black w-5 h-5 flex items-center justify-center rounded-full ${rank <= 3 ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-400'}`}>
+            {rank}
+        </span>
+        {left}
       </div>
-      <span className="text-xs font-black text-slate-700">{right}</span>
+      {right}
     </div>
   )
 }
 
 function Empty() {
-  return <p className="text-slate-400 font-bold text-sm">Sem dados ainda.</p>
+  return (
+    <div className="h-32 flex items-center justify-center border-2 border-dashed border-slate-200 rounded-xl">
+        <p className="text-slate-400 font-bold text-xs uppercase tracking-widest">Sem dados registrados</p>
+    </div>
+  )
 }
