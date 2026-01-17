@@ -1,8 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-import { revalidateTag } from 'next/cache' // ✅ IMPORTADO PARA O CACHE
+import { revalidateTag } from 'next/cache'
 
-export const dynamic = 'force-dynamic'
+// ❌ REMOVIDO 'force-dynamic' (Isso impedia o cache de funcionar)
 
 function makeAnon() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -39,16 +39,23 @@ export async function GET() {
   const { data, error } = await supabase
     .from('config_site')
     .select('*')
-    .eq('id', 1)
+    .eq('id', 1) // Garante que pega sempre a config principal
     .single()
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) {
+     // Se não achar, não quebra, retorna objeto vazio
+     if (error.code === 'PGRST116') return NextResponse.json({})
+     return NextResponse.json({ error: error.message }, { status: 500 })
+  }
 
-  // ✅ RESPOSTA COM ETIQUETA DE CACHE PARA A HOME
   return NextResponse.json(data, {
+    status: 200,
     headers: {
-        'Cache-Control': 's-maxage=60, stale-while-revalidate=300',
-        'x-nextjs-tags': 'config' // Tag que a Home usa
+        // ✅ AQUI ESTÁ A MÁGICA:
+        // s-maxage=3600: Cache de 1 HORA para o usuário comum.
+        // stale-while-revalidate=86400: Se cair o banco, o site fica no ar por 1 dia.
+        'Cache-Control': 'public, s-maxage=3600, stale-while-revalidate=86400',
+        'x-nextjs-tags': 'config' // Essencial para o PUT limpar o cache
     }
   })
 }
@@ -117,6 +124,11 @@ export async function PUT(request) {
     titulo_modalidades: body.titulo_modalidades,
     subtitulo_modalidades: body.subtitulo_modalidades,
     texto_footer: body.texto_footer,
+    
+    // CAMPOS DE CONTROLE DA INSCRIÇÃO (Adicionei para garantir que funcione o botão da home)
+    inscricoes_abertas: body.inscricoes_abertas,
+    inscricoes_futsal_abertas: body.inscricoes_futsal_abertas,
+    inscricoes_society_abertas: body.inscricoes_society_abertas
   })
 
   const { error } = await supabase
@@ -126,8 +138,14 @@ export async function PUT(request) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  // ✅ LIMPA O CACHE DA HOME IMEDIATAMENTE APÓS EDIÇÃO
-  revalidateTag('config')
+  // ✅ LIMPEZA DE CACHE INSTANTÂNEA
+  // Quando você salvar no admin, ele avisa a Vercel: "O cache 'config' está velho, apaga agora!"
+  // Isso faz a atualização ser imediata, mesmo com cache de 1 hora.
+  try {
+      revalidateTag('config')
+  } catch (e) {
+      console.log('Erro ao revalidar cache (ignorável em dev):', e)
+  }
 
   return NextResponse.json({ success: true })
 }

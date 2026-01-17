@@ -16,7 +16,6 @@ import {
   CreditCard,
   Phone,
   Radio,
-  LayoutList,
   Volume2,
   Code
 } from 'lucide-react'
@@ -34,11 +33,11 @@ export default function Home() {
   const [patrocinios, setPatrocinios] = useState([]) 
 
   useEffect(() => {
-    // ✅ CACHE ON-DEMAND: Usamos 'no-store' no cliente para garantir que
-    // o navegador sempre pergunte ao servidor (que entregará o cache rápido da Vercel)
+    // ✅ CACHE ATIVADO: Removemos o 'no-store'. 
+    // Agora ele obedece o Cache de 1 HORA configurado nas APIs.
     Promise.all([
-      fetch('/api/config', { cache: 'no-store' }).then(res => res.json()),
-      fetch('/api/admin/patrocinios', { cache: 'no-store' }).then(res => res.json())
+      fetch('/api/config').then(res => res.json()),
+      fetch('/api/admin/patrocinios').then(res => res.json())
     ]).then(([config, patro]) => {
       setSiteData(config || {})
       setPatrocinios(Array.isArray(patro) ? patro : [])
