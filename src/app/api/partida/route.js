@@ -1,6 +1,9 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 
+// Removido dynamic para cache, mas mantenha em mente que para debug as vezes ajuda limpar cache
+// export const dynamic = 'force-dynamic' 
+
 function supabaseAnon() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -11,85 +14,81 @@ function supabaseAnon() {
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
-  const id = Number(searchParams.get('id') || 0)
+  const id = searchParams.get('id') // Pega como string primeiro
 
-  if (!id) return NextResponse.json({ error: 'ID obrigatório' }, { status: 400 })
+  console.log(`🔍 [API] Buscando Jogo ID: ${id}`)
+
+  if (!id) return NextResponse.json({ error: 'ID não fornecido' }, { status: 400 })
 
   const supabase = supabaseAnon()
 
   try {
-    // PASSO 1: Busca o Jogo (Simples)
-    const { data: jogo, error: errJogo } = await supabase
+    // 1. TENTATIVA DIRETA E SIMPLES (Sem relacionamentos)
+    const { data: jogo, error } = await supabase
       .from('jogos')
-      .select('*')
+      .select('*') // Pega TUDO, sem frescura de foreign key
       .eq('id', id)
       .maybeSingle()
 
-    if (errJogo) throw errJogo
-    if (!jogo) return NextResponse.json({ error: 'Jogo não encontrado' }, { status: 404 })
-
-    // PASSO 2: Busca os Times (Manual e Seguro)
-    // Se não tiver time A ou B definido, ele não quebra
-    const idsTimes = [jogo.equipe_a_id, jogo.equipe_b_id].filter(Boolean)
-    
-    let times = []
-    if (idsTimes.length > 0) {
-        const resTimes = await supabase.from('equipes').select('id, nome_equipe, logo_url').in('id', idsTimes)
-        times = resTimes.data || []
+    if (error) {
+        console.error("❌ [API] Erro no Supabase:", error.message)
+        throw error
     }
 
-    // Mapeia os times para fácil acesso
-    const timeA = times.find(t => t.id === jogo.equipe_a_id) || { nome_equipe: 'A Definir' }
-    const timeB = times.find(t => t.id === jogo.equipe_b_id) || { nome_equipe: 'A Definir' }
+    if (!jogo) {
+        console.error(`❌ [API] Jogo ${id} retornou NULL. Possível bloqueio RLS ou ID inexistente.`)
+        return NextResponse.json({ error: 'Jogo não encontrado no banco' }, { status: 404 })
+    }
 
-    // PASSO 3: Busca Eventos e Atletas
+    console.log(`✅ [API] Jogo encontrado: ${jogo.id} - ${jogo.data_jogo}`)
+
+    // 2. AGORA BUSCAMOS OS NOMES DOS TIMES (Separado para não travar)
+    let nomeA = 'A Definir'
+    let nomeB = 'A Definir'
+    let logoA = null
+    let logoB = null
+
+    if (jogo.equipe_a_id) {
+        const { data: tA } = await supabase.from('equipes').select('nome_equipe, logo_url').eq('id', jogo.equipe_a_id).maybeSingle()
+        if (tA) { nomeA = tA.nome_equipe; logoA = tA.logo_url }
+    }
+
+    if (jogo.equipe_b_id) {
+        const { data: tB } = await supabase.from('equipes').select('nome_equipe, logo_url').eq('id', jogo.equipe_b_id).maybeSingle()
+        if (tB) { nomeB = tB.nome_equipe; logoB = tB.logo_url }
+    }
+
+    // 3. BUSCA EVENTOS
     const { data: eventos } = await supabase
         .from('jogo_eventos')
         .select('*')
         .eq('jogo_id', id)
         .order('created_at', { ascending: true })
 
-    const { data: todosAtletas } = await supabase
-        .from('atletas')
-        .select('id, nome, numero_camisa, equipe_id')
-        .in('equipe_id', idsTimes)
+    // 4. FORMATAÇÃO SIMPLES (Sem buscar atletas por enquanto para isolar o erro)
+    const eventosFormatados = (eventos || []).map(ev => ({
+        ...ev,
+        team_name: ev.equipe_id === jogo.equipe_a_id ? nomeA : nomeB,
+        atleta_label: ev.camisa_no_jogo ? `#${ev.camisa_no_jogo}` : (ev.observacao || 'Lance')
+    }))
 
-    // PASSO 4: Processamento Final
-    const atletasLista = todosAtletas || []
-    const atletasA = atletasLista.filter(a => a.equipe_id === jogo.equipe_a_id).sort((a,b) => (a.numero_camisa || 99) - (b.numero_camisa || 99))
-    const atletasB = atletasLista.filter(a => a.equipe_id === jogo.equipe_b_id).sort((a,b) => (a.numero_camisa || 99) - (b.numero_camisa || 99))
-
-    // Formata eventos
-    const atletaMap = new Map()
-    atletasLista.forEach(a => atletaMap.set(a.id, a))
-
-    const eventosFormatados = (eventos || []).map(ev => {
-        const isTimeA = ev.equipe_id === jogo.equipe_a_id
-        const teamName = isTimeA ? timeA.nome_equipe : timeB.nome_equipe
-        const atleta = ev.atleta_id ? atletaMap.get(ev.atleta_id) : null
-        const camisa = ev.camisa_no_jogo ?? atleta?.numero_camisa ?? '-'
-        const atletaLabel = atleta ? `#${camisa} ${atleta.nome}` : `#${camisa} Jogador`
-
-        return { ...ev, team_name: teamName, atleta_label: atletaLabel }
-    })
-
-    // Monta objeto final
-    const jogoCompleto = { ...jogo, equipeA: timeA, equipeB: timeB }
+    // Objeto do jogo com os times "injetados" manualmente
+    const jogoCompleto = {
+        ...jogo,
+        equipeA: { nome_equipe: nomeA, logo_url: logoA },
+        equipeB: { nome_equipe: nomeB, logo_url: logoB }
+    }
 
     return NextResponse.json({
         jogo: jogoCompleto,
         eventos: eventosFormatados,
-        atletasA,
-        atletasB
+        atletasA: [], // Mandando vazio por segurança agora
+        atletasB: []  // Mandando vazio por segurança agora
     }, {
-        status: 200,
-        headers: {
-            'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=59',
-        }
+        headers: { 'Cache-Control': 'public, s-maxage=10, stale-while-revalidate=59' } // Cache baixo para teste
     })
 
   } catch (e) {
-    console.error("ERRO API PARTIDA:", e)
     return NextResponse.json({ error: e.message }, { status: 500 })
   }
 }
