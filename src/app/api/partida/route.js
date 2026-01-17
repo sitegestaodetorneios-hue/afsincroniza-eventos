@@ -18,78 +18,64 @@ export async function GET(request) {
   const supabase = supabaseAnon()
 
   try {
-    // 1. BUSCA O JOGO (Primeiro passo isolado)
-    const { data: jogo, error } = await supabase
+    // PASSO 1: Busca o Jogo (Simples)
+    const { data: jogo, error: errJogo } = await supabase
       .from('jogos')
       .select('*')
       .eq('id', id)
-      .maybeSingle() // ✅ USA maybeSingle: Se não achar, retorna null em vez de erro
+      .maybeSingle()
 
-    if (error) throw error
+    if (errJogo) throw errJogo
     if (!jogo) return NextResponse.json({ error: 'Jogo não encontrado' }, { status: 404 })
 
-    // 2. BUSCAS AUXILIARES (Preparadas para falhar sem derrubar tudo)
-    const promises = [
-        supabase.from('jogo_eventos').select('*').eq('jogo_id', id).order('created_at', { ascending: true }),
-        // Busca atletas dos dois times
-        supabase.from('atletas').select('id, nome, numero_camisa, equipe_id').in('equipe_id', [jogo.equipe_a_id, jogo.equipe_b_id].filter(Boolean))
-    ]
-
-    // Adiciona busca do Time A (se tiver ID)
-    if (jogo.equipe_a_id) {
-        promises.push(supabase.from('equipes').select('id, nome_equipe, logo_url').eq('id', jogo.equipe_a_id).maybeSingle())
-    } else {
-        promises.push(Promise.resolve({ data: null })) // Placeholder se não tiver time A
-    }
-
-    // Adiciona busca do Time B (se tiver ID)
-    if (jogo.equipe_b_id) {
-        promises.push(supabase.from('equipes').select('id, nome_equipe, logo_url').eq('id', jogo.equipe_b_id).maybeSingle())
-    } else {
-        promises.push(Promise.resolve({ data: null })) // Placeholder se não tiver time B
-    }
-
-    // Executa tudo
-    const [resEventos, resAtletas, resTimeA, resTimeB] = await Promise.all(promises)
-
-    // 3. MONTA O OBJETO FINAL (Com proteção contra nulos)
-    const equipeA = resTimeA?.data || { nome_equipe: 'A Definir' }
-    const equipeB = resTimeB?.data || { nome_equipe: 'A Definir' }
-
-    const jogoCompleto = {
-        ...jogo,
-        equipeA,
-        equipeB
-    }
-
-    // 4. PREPARA LISTAS
-    const eventos = resEventos.data || []
-    const todosAtletas = resAtletas.data || []
+    // PASSO 2: Busca os Times (Manual e Seguro)
+    // Se não tiver time A ou B definido, ele não quebra
+    const idsTimes = [jogo.equipe_a_id, jogo.equipe_b_id].filter(Boolean)
     
-    // Filtra e organiza escalações
-    const atletasA = todosAtletas.filter(a => a.equipe_id === jogo.equipe_a_id).sort((a,b) => (a.numero_camisa || 99) - (b.numero_camisa || 99))
-    const atletasB = todosAtletas.filter(a => a.equipe_id === jogo.equipe_b_id).sort((a,b) => (a.numero_camisa || 99) - (b.numero_camisa || 99))
+    let times = []
+    if (idsTimes.length > 0) {
+        const resTimes = await supabase.from('equipes').select('id, nome_equipe, logo_url').in('id', idsTimes)
+        times = resTimes.data || []
+    }
 
-    // 5. ENRIQUECE EVENTOS
+    // Mapeia os times para fácil acesso
+    const timeA = times.find(t => t.id === jogo.equipe_a_id) || { nome_equipe: 'A Definir' }
+    const timeB = times.find(t => t.id === jogo.equipe_b_id) || { nome_equipe: 'A Definir' }
+
+    // PASSO 3: Busca Eventos e Atletas
+    const { data: eventos } = await supabase
+        .from('jogo_eventos')
+        .select('*')
+        .eq('jogo_id', id)
+        .order('created_at', { ascending: true })
+
+    const { data: todosAtletas } = await supabase
+        .from('atletas')
+        .select('id, nome, numero_camisa, equipe_id')
+        .in('equipe_id', idsTimes)
+
+    // PASSO 4: Processamento Final
+    const atletasLista = todosAtletas || []
+    const atletasA = atletasLista.filter(a => a.equipe_id === jogo.equipe_a_id).sort((a,b) => (a.numero_camisa || 99) - (b.numero_camisa || 99))
+    const atletasB = atletasLista.filter(a => a.equipe_id === jogo.equipe_b_id).sort((a,b) => (a.numero_camisa || 99) - (b.numero_camisa || 99))
+
+    // Formata eventos
     const atletaMap = new Map()
-    todosAtletas.forEach(a => atletaMap.set(a.id, a))
+    atletasLista.forEach(a => atletaMap.set(a.id, a))
 
-    const eventosFormatados = eventos.map(ev => {
+    const eventosFormatados = (eventos || []).map(ev => {
         const isTimeA = ev.equipe_id === jogo.equipe_a_id
-        const teamName = isTimeA ? equipeA.nome_equipe : equipeB.nome_equipe
-        
+        const teamName = isTimeA ? timeA.nome_equipe : timeB.nome_equipe
         const atleta = ev.atleta_id ? atletaMap.get(ev.atleta_id) : null
         const camisa = ev.camisa_no_jogo ?? atleta?.numero_camisa ?? '-'
         const atletaLabel = atleta ? `#${camisa} ${atleta.nome}` : `#${camisa} Jogador`
 
-        return {
-            ...ev,
-            team_name: teamName,
-            atleta_label: atletaLabel
-        }
+        return { ...ev, team_name: teamName, atleta_label: atletaLabel }
     })
 
-    // 6. RETORNO FINAL
+    // Monta objeto final
+    const jogoCompleto = { ...jogo, equipeA: timeA, equipeB: timeB }
+
     return NextResponse.json({
         jogo: jogoCompleto,
         eventos: eventosFormatados,
@@ -103,8 +89,7 @@ export async function GET(request) {
     })
 
   } catch (e) {
-    console.error("ERRO CRÍTICO API PARTIDA:", e)
-    // Retorna JSON de erro para o front saber que falhou
-    return NextResponse.json({ error: e.message || 'Erro interno no servidor' }, { status: 500 })
+    console.error("ERRO API PARTIDA:", e)
+    return NextResponse.json({ error: e.message }, { status: 500 })
   }
 }

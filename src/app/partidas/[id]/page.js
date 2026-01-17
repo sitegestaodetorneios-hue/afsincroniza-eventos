@@ -3,19 +3,13 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Loader2, ClipboardList, Shirt, RefreshCcw, Trophy, Volume2, Calendar, Clock, MapPin } from 'lucide-react'
 
-// Função auxiliar segura (Igual da Tabela)
+// Função auxiliar segura
 async function safeJson(res) {
-  try {
-    return await res.json()
-  } catch {
-    return {} 
-  }
+  try { return await res.json() } catch { return {} }
 }
 
-// Garante que sempre teremos um array para evitar erro de .map
 function asArray(v) { return Array.isArray(v) ? v : [] }
 
-// Badge colorida para os eventos
 function badge(tipo) {
   const base = 'text-[10px] font-black uppercase px-3 py-1 rounded-full border shadow-sm'
   if (tipo === 'GOL') return `${base} bg-green-100 text-green-700 border-green-200`
@@ -25,42 +19,41 @@ function badge(tipo) {
 }
 
 export default function PartidaDetalhe({ params }) {
+  // Pega ID de forma segura (tratando possíveis promises do Next.js novo)
   const jogoId = params?.id
 
   const [loading, setLoading] = useState(true)
-  const [data, setData] = useState({ 
-      jogo: null, 
-      eventos: [], 
-      atletasA: [], 
-      atletasB: [] 
-  })
+  const [data, setData] = useState({ jogo: null, eventos: [], atletasA: [], atletasB: [] })
   const [patrocinios, setPatrocinios] = useState([])
-  
-  // Ref para evitar atualização de estado se o componente desmontar (sair da tela)
   const mountedRef = useRef(true)
+
   useEffect(() => {
     mountedRef.current = true
     return () => (mountedRef.current = false)
   }, [])
 
-  // Função de Carga (Blindada igual a Tabela)
   async function loadData(silent = false) {
     if (!silent) setLoading(true)
+    
+    console.log("🚀 INICIANDO CARGA DO JOGO ID:", jogoId)
+
     try {
-      // ✅ Cache On-Demand: 'no-store' aqui força o navegador a perguntar pra Vercel
-      // A Vercel entrega o cache de 30s que configuramos na API.
-      const [res, resPatro] = await Promise.all([
-        fetch(`/api/partida?id=${jogoId}`, { cache: 'no-store' }), 
-        fetch('/api/admin/patrocinios', { cache: 'no-store' })
-      ])
-      
+      // 1. Busca Jogo
+      console.log("📡 Buscando API Partida...")
+      const res = await fetch(`/api/partida?id=${jogoId}`, { cache: 'no-store' })
       const d = await safeJson(res)
+      console.log("✅ Dados Jogo recebidos:", d)
+
+      // 2. Busca Patrocínio (Independente)
+      console.log("📡 Buscando Patrocínios...")
+      const resPatro = await fetch('/api/admin/patrocinios', { cache: 'no-store' })
       const p = await safeJson(resPatro)
+      console.log("✅ Patrocínios recebidos")
 
       if (!mountedRef.current) return
 
-      if (!res.ok || d.error) {
-        console.error("Erro API Partida:", d.error)
+      if (d.error) {
+        console.error("❌ Erro retornado pela API:", d.error)
       } else {
         setData({
             jogo: d.jogo || null,
@@ -72,29 +65,26 @@ export default function PartidaDetalhe({ params }) {
       setPatrocinios(asArray(p))
 
     } catch (e) {
-      console.error("Erro de conexão:", e)
+      console.error("❌ ERRO NO FRONTEND:", e)
     } finally {
+      console.log("🏁 Finalizando Loading...")
       if (mountedRef.current && !silent) setLoading(false)
     }
   }
 
-  // Efeito de Carga Inicial + Auto Refresh
   useEffect(() => {
     if (jogoId) {
         loadData(false)
-        // Atualiza a cada 15 segundos (O Cache da API protege o banco)
-        const t = setInterval(() => {
-          if (document.visibilityState === 'visible') loadData(true)
-        }, 15000) 
+        const t = setInterval(() => { if (document.visibilityState === 'visible') loadData(true) }, 15000) 
         return () => clearInterval(t)
+    } else {
+        setLoading(false) // Se não tem ID, para de carregar
     }
   }, [jogoId])
 
-  // Separação dos Patrocinadores
   const patrocinadorMaster = useMemo(() => patrocinios.find(p => p.cota === 'MASTER'), [patrocinios])
   const patrocinadoresRodape = useMemo(() => patrocinios.filter(p => p.cota === 'RODAPE'), [patrocinios])
 
-  // Dados simplificados para o Layout
   const jogo = data.jogo
   const eventos = data.eventos
   const nomeA = jogo?.equipeA?.nome_equipe || `Equipe A`
@@ -107,6 +97,7 @@ export default function PartidaDetalhe({ params }) {
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center gap-4">
         <Loader2 className="animate-spin text-blue-600" size={40} />
         <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Carregando Súmula...</p>
+        <p className="text-[10px] text-slate-300">ID: {jogoId}</p>
       </div>
     )
   }
@@ -115,6 +106,7 @@ export default function PartidaDetalhe({ params }) {
       return (
         <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-10 text-center">
             <h1 className="text-2xl font-black text-slate-900 mb-2">Jogo não encontrado</h1>
+            <p className="text-slate-500 mb-6">Verifique se o ID {jogoId} está correto.</p>
             <Link href="/partidas" className="text-blue-600 font-bold hover:underline">Voltar para o calendário</Link>
         </div>
       )
@@ -124,7 +116,7 @@ export default function PartidaDetalhe({ params }) {
     <main className="min-h-screen bg-slate-50 py-10 px-4 md:px-10 font-sans text-slate-800">
       <div className="max-w-5xl mx-auto">
         
-        {/* Header de Navegação */}
+        {/* Header */}
         <div className="flex justify-between items-center mb-8">
           <Link href="/partidas" className="flex items-center gap-2 text-slate-500 hover:text-blue-600 font-bold text-sm uppercase transition-colors">
             <ArrowLeft size={18} /> Voltar
@@ -154,34 +146,28 @@ export default function PartidaDetalhe({ params }) {
 
         <div className="bg-white rounded-[2.5rem] shadow-2xl overflow-hidden border border-slate-200 transition-all">
             
-            {/* PLACAR ESTILO FIFA / TV */}
+            {/* PLACAR */}
             <div className="bg-slate-900 text-white p-6 md:p-12 relative overflow-hidden">
                 <div className="relative z-10">
-                  {/* Status do Jogo */}
                   <div className="flex items-center justify-center mb-8">
                     <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border border-white/10 ${jogo?.status === 'EM_ANDAMENTO' ? 'bg-red-600 text-white animate-pulse shadow-red-900/50 shadow-lg' : 'bg-slate-800 text-slate-400'}`}>
                       {jogo?.status === 'EM_ANDAMENTO' ? '● AO VIVO AGORA' : (jogo?.finalizado ? 'FIM DE JOGO' : 'AGENDADO')}
                     </span>
                   </div>
 
-                  {/* Times e Placar */}
                   <div className="flex flex-col md:flex-row items-center justify-between gap-8 md:gap-0">
-                    
-                    {/* Time A */}
                     <div className="flex-1 flex flex-col items-center md:items-start text-center md:text-left">
                         {logoA && <img src={logoA} className="h-16 w-16 md:h-20 md:w-20 object-contain mb-4 bg-white rounded-full p-2" alt="Logo A"/>}
                         <h2 className="text-2xl md:text-4xl font-black uppercase italic tracking-tighter leading-none">{nomeA}</h2>
                         <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mt-2">Mandante</p>
                     </div>
 
-                    {/* Placar Central */}
                     <div className="flex flex-col items-center px-8">
                       <div className="bg-white/10 backdrop-blur-sm px-8 py-4 rounded-3xl border border-white/10 flex items-center gap-6 md:gap-10">
                         <span className="text-6xl md:text-8xl font-black tracking-tighter">{jogo?.gols_a ?? 0}</span>
                         <span className="text-slate-400 text-4xl md:text-5xl font-light opacity-50">×</span>
                         <span className="text-6xl md:text-8xl font-black tracking-tighter">{jogo?.gols_b ?? 0}</span>
                       </div>
-                      
                       {jogo?.penaltis_a !== null && (
                         <div className="mt-4 bg-yellow-500/20 border border-yellow-500/50 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest text-yellow-400">
                           Pênaltis: {jogo.penaltis_a} - {jogo.penaltis_b}
@@ -189,7 +175,6 @@ export default function PartidaDetalhe({ params }) {
                       )}
                     </div>
 
-                    {/* Time B */}
                     <div className="flex-1 flex flex-col items-center md:items-end text-center md:text-right">
                         {logoB && <img src={logoB} className="h-16 w-16 md:h-20 md:w-20 object-contain mb-4 bg-white rounded-full p-2" alt="Logo B"/>}
                         <h2 className="text-2xl md:text-4xl font-black uppercase italic tracking-tighter leading-none">{nomeB}</h2>
@@ -197,13 +182,11 @@ export default function PartidaDetalhe({ params }) {
                     </div>
                   </div>
                 </div>
-                
-                {/* Background Decorativo */}
                 <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-slate-800 to-slate-900 -z-10"></div>
                 <div className="absolute right-0 bottom-0 opacity-5 transform translate-x-1/4 translate-y-1/4"><Trophy size={400} /></div>
             </div>
 
-            {/* Informações Técnicas */}
+            {/* INFO TÉCNICA */}
             <div className="bg-slate-50 border-y border-slate-100 px-6 py-4 flex flex-wrap justify-center gap-6 md:gap-12 text-[10px] font-black uppercase tracking-widest text-slate-400">
                 <div className="flex items-center gap-2"><Calendar size={14} className="text-blue-600"/> {jogo?.data_jogo ? new Date(jogo.data_jogo + 'T00:00:00').toLocaleDateString('pt-BR') : '--/--'}</div>
                 <div className="flex items-center gap-2"><Clock size={14} className="text-blue-600"/> {jogo?.horario ? String(jogo.horario).slice(0,5) : '--:--'}</div>
@@ -211,11 +194,10 @@ export default function PartidaDetalhe({ params }) {
                 {jogo?.local && <div className="flex items-center gap-2"><MapPin size={14} className="text-red-500"/> {jogo.local}</div>}
             </div>
 
-            {/* Grid de Conteúdo (Lances e Elenco) */}
+            {/* CONTEÚDO */}
             <div className="p-6 md:p-10 grid lg:grid-cols-2 gap-10">
-                
-                {/* COLUNA 1: LANCE A LANCE */}
-                <div className="animate-in slide-in-from-left-4 duration-500">
+                {/* LANCE A LANCE */}
+                <div>
                   <div className="flex items-center gap-3 mb-6 border-b border-slate-100 pb-4">
                     <div className="p-2 bg-blue-100 rounded-lg text-blue-600"><ClipboardList size={20} /></div>
                     <h3 className="font-black uppercase text-slate-900 tracking-tight">Timeline da Partida</h3>
@@ -225,13 +207,10 @@ export default function PartidaDetalhe({ params }) {
                     <div className="py-12 text-center border-2 border-dashed border-slate-100 rounded-2xl bg-slate-50/50">
                       <ClipboardList className="mx-auto text-slate-300 mb-3" size={32}/>
                       <p className="text-slate-400 font-bold text-xs uppercase tracking-widest">Nenhum evento registrado</p>
-                      <p className="text-slate-300 text-[10px] mt-1">Os gols e cartões aparecerão aqui em tempo real.</p>
                     </div>
                   ) : (
                     <div className="space-y-3 relative">
-                      {/* Linha do tempo visual */}
                       <div className="absolute left-6 top-4 bottom-4 w-0.5 bg-slate-100 -z-10"></div>
-                      
                       {eventos.map((ev, idx) => (
                         <div key={ev.id || idx} className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex items-start gap-4 hover:shadow-md transition-shadow">
                           <div className="flex flex-col items-center min-w-[3rem]">
@@ -251,15 +230,15 @@ export default function PartidaDetalhe({ params }) {
                   )}
                 </div>
 
-                {/* COLUNA 2: ESCALAÇÕES */}
-                <div className="animate-in slide-in-from-right-4 duration-500 delay-100">
+                {/* ESCALAÇÕES */}
+                <div>
                   <div className="flex items-center gap-3 mb-6 border-b border-slate-100 pb-4">
                     <div className="p-2 bg-blue-100 rounded-lg text-blue-600"><Shirt size={20} /></div>
                     <h3 className="font-black uppercase text-slate-900 tracking-tight">Elencos Relacionados</h3>
                   </div>
 
                   <div className="grid gap-6">
-                    {/* TIME A */}
+                    {/* Time A */}
                     <div className="bg-slate-50 rounded-2xl p-5 border border-slate-200">
                       <p className="text-[10px] font-black uppercase text-blue-600 mb-4 tracking-widest border-b border-slate-200 pb-2">{nomeA}</p>
                       <div className="space-y-1.5 max-h-[300px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-200">
@@ -274,7 +253,7 @@ export default function PartidaDetalhe({ params }) {
                       </div>
                     </div>
 
-                    {/* TIME B */}
+                    {/* Time B */}
                     <div className="bg-slate-50 rounded-2xl p-5 border border-slate-200">
                       <p className="text-[10px] font-black uppercase text-blue-600 mb-4 tracking-widest border-b border-slate-200 pb-2">{nomeB}</p>
                       <div className="space-y-1.5 max-h-[300px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-200">
@@ -291,32 +270,31 @@ export default function PartidaDetalhe({ params }) {
                   </div>
                 </div>
             </div>
-        </div>
 
-        {/* FOOTER */}
-        <footer className="mt-20 pt-10 border-t border-slate-200">
-          {patrocinadoresRodape.length > 0 && (
-            <div className="mb-12 text-center">
-              <p className="text-[10px] font-black uppercase text-slate-400 tracking-[0.4em] mb-10 italic">Apoio Tecnológico e Realização</p>
-              <div className="flex flex-wrap justify-center items-center gap-10 md:gap-16 opacity-60 grayscale hover:grayscale-0 transition-all duration-700">
-                {patrocinadoresRodape.map(p => (
-                  <a key={p.id} href={p.link_destino || '#'} target="_blank"><img src={p.banner_url} alt={p.nome_empresa} className="h-10 md:h-12 w-auto object-contain hover:scale-110 transition-transform" /></a>
-                ))}
+            {/* FOOTER */}
+            <footer className="mt-20 pt-10 border-t border-slate-200">
+              {patrocinadoresRodape.length > 0 && (
+                <div className="mb-12 text-center">
+                  <p className="text-[10px] font-black uppercase text-slate-400 tracking-[0.4em] mb-10 italic">Apoio Tecnológico e Realização</p>
+                  <div className="flex flex-wrap justify-center items-center gap-10 md:gap-16 opacity-60 grayscale hover:grayscale-0 transition-all duration-700">
+                    {patrocinadoresRodape.map(p => (
+                      <a key={p.id} href={p.link_destino || '#'} target="_blank"><img src={p.banner_url} alt={p.nome_empresa} className="h-10 md:h-12 w-auto object-contain hover:scale-110 transition-transform" /></a>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div className="pt-8 border-t border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
+                <p className="text-[10px] text-slate-400 font-mono uppercase tracking-widest font-bold">© 2026 GESTÃO ESPORTIVA INTEGRADA</p>
+                <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                  <span>Súmula Digital por</span>
+                  <a href="https://wa.me/5547997037512" target="_blank" className="text-blue-600 flex items-center gap-2 group">
+                    <span className="border-b-2 border-blue-600/10 group-hover:border-blue-600 transition-all tracking-tighter">RC ENTERPRISE</span>
+                    <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                  </a>
+                </div>
               </div>
-            </div>
-          )}
-
-          <div className="pt-8 border-t border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
-            <p className="text-[10px] text-slate-400 font-mono uppercase tracking-widest font-bold">© 2026 GESTÃO ESPORTIVA INTEGRADA</p>
-            <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-slate-500">
-              <span>Súmula Digital por</span>
-              <a href="https://wa.me/5547997037512" target="_blank" className="text-blue-600 flex items-center gap-2 group">
-                <span className="border-b-2 border-blue-600/10 group-hover:border-blue-600 transition-all tracking-tighter">RC ENTERPRISE</span>
-                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-              </a>
-            </div>
-          </div>
-        </footer>
+            </footer>
+        </div>
       </div>
     </main>
   )
