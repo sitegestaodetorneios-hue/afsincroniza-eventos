@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 
-export const dynamic = 'force-dynamic'
+// REMOVIDO 'force-dynamic' para permitir o Cache da Vercel funcionar
 
 function supabaseAnon() {
   return createClient(
@@ -28,12 +28,16 @@ export async function GET(request) {
       etapa = active?.[0] || (await supabase.from('etapas').select('*').order('created_at', { ascending: false }).limit(1)).data?.[0]
     }
 
-    if (!etapa) return NextResponse.json({ etapa: null, classificacao: [], finais: [], menu: [], artilharia: [], defesa: [] })
+    if (!etapa) {
+        return NextResponse.json({ etapa: null, classificacao: [], finais: [], menu: [], artilharia: [], defesa: [] }, {
+            headers: { 'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=59' }
+        })
+    }
 
-    // 2. BUSCA DADOS DA VIEW (PONTUAÇÃO, VITORIAS, GOLS)
+    // 2. BUSCA DADOS DA VIEW
     const { data: dadosView } = await supabase.from('vw_tabela_oficial').select('*').eq('etapa_id', etapa.id)
     
-    // 3. BUSCA EVENTOS (PARA CARTÕES E ARTILHARIA)
+    // 3. BUSCA EVENTOS (OTIMIZADO)
     const { data: jogos } = await supabase.from('jogos').select('id').eq('etapa_id', etapa.id)
     const jogoIds = jogos?.map(j => j.id) || []
 
@@ -46,7 +50,7 @@ export async function GET(request) {
         eventos = evs || []
     }
 
-    // 4. PROCESSAMENTO DE CARTÕES E GOLS
+    // 4. PROCESSAMENTO
     const statsTime = {} 
     const golsPorAtletaId = {}
 
@@ -60,14 +64,15 @@ export async function GET(request) {
         }
     })
 
-    // 5. RANKING DE ARTILHARIA (TOP 10)
+    // 5. ARTILHARIA
     const idsArtilheiros = Object.keys(golsPorAtletaId)
     let artilhariaFinal = []
     if (idsArtilheiros.length > 0) {
         const { data: atletas } = await supabase.from('atletas').select('id, nome, equipe_id').in('id', idsArtilheiros)
+        
+        // Otimização: Pegar apenas equipes necessárias
         const equipeIds = [...new Set(atletas?.map(a => a.equipe_id) || [])]
         const { data: equipesArt } = await supabase.from('equipes').select('id, nome_equipe').in('id', equipeIds)
-        
         const equipeMap = {}
         equipesArt?.forEach(eq => equipeMap[eq.id] = eq.nome_equipe)
 
@@ -79,49 +84,41 @@ export async function GET(request) {
         })).sort((a, b) => b.gols - a.gols).slice(0, 10) || []
     }
 
-    // 6. CLASSIFICAÇÃO COM CRITÉRIOS DE DESEMPATE FIFA
+    // 6. CLASSIFICAÇÃO FIFA
     const classificacaoFinal = (dadosView || []).map(time => {
         const cartoes = statsTime[time.equipe_id] || { am: 0, verm: 0 }
         const gp = time.gp || 0
         const gc = time.gc || 0
         return { 
           ...time, 
-          gp, 
-          gc, 
+          gp, gc, 
           sg: gp - gc,
           ca: cartoes.am, 
           cv: cartoes.verm,
           media_gc: time.j > 0 ? (gc / time.j) : 999 
         }
     }).sort((a, b) => {
-        // ORDEM FIFA: 
-        // 1. PONTOS
         if (b.pts !== a.pts) return b.pts - a.pts;
-        // 2. SALDO DE GOLS
         if (b.sg !== a.sg) return b.sg - a.sg;
-        // 3. GOLS PRÓ
         if (b.gp !== a.gp) return b.gp - a.gp;
-        // 4. VITÓRIAS
         if (b.v !== a.v) return b.v - a.v;
-        // 5. FAIR PLAY - MENOS VERMELHOS
         if (a.cv !== b.cv) return a.cv - b.cv; 
-        // 6. FAIR PLAY - MENOS AMARELOS
         return a.ca - b.ca;
     });
 
-    // 7. RANKING GOLEIRO MENOS VAZADO (MELHOR DEFESA)
+    // 7. MELHOR DEFESA
     const defesaFinal = [...classificacaoFinal]
       .filter(t => t.j > 0) 
       .sort((a, b) => a.gc - b.gc || a.media_gc - b.media_gc)
       .slice(0, 5);
 
-    // 8. BUSCA JOGOS DE MATA-MATA (FINAIS)
+    // 8. FINAIS
     const { data: finais } = await supabase
         .from('jogos')
         .select(`
-            id, tipo_jogo, gols_a, gols_b, penaltis_a, penaltis_b, finalizado, status,
-            equipeA:equipes!jogos_equipe_a_id_fkey(nome_equipe),
-            equipeB:equipes!jogos_equipe_b_id_fkey(nome_equipe)
+            id, tipo_jogo, gols_a, gols_b, penaltis_a, penaltis_b, finalizado, status, rodada, data_jogo, horario,
+            equipeA:equipes!jogos_equipe_a_id_fkey(nome_equipe, logo_url),
+            equipeB:equipes!jogos_equipe_b_id_fkey(nome_equipe, logo_url)
         `)
         .eq('etapa_id', etapa.id)
         .in('tipo_jogo', ['FINAL', 'DISPUTA_3', 'SEMI', 'QUARTAS'])
@@ -129,7 +126,7 @@ export async function GET(request) {
 
     const { data: menu } = await supabase.from('etapas').select('id, titulo, status, modalidade').order('created_at', { ascending: false })
 
-    // RETORNO COM HEADERS DE CACHE PARA VERCEL
+    // RETORNO COM CACHE DE 30s (Igual ao Ao Vivo)
     return NextResponse.json({ 
         etapa, 
         classificacao: classificacaoFinal,
@@ -138,8 +135,9 @@ export async function GET(request) {
         finais: finais || [],
         menu: menu || []
     }, {
+        status: 200,
         headers: {
-            'Cache-Control': 's-maxage=1, stale-while-revalidate=59',
+            'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=59',
             'x-nextjs-tags': 'tabela'
         }
     })
