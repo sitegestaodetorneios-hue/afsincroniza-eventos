@@ -28,8 +28,8 @@ export default function Partida({ params }) {
   const [data, setData] = useState(null)
   const [patrocinios, setPatrocinios] = useState([])
   const [loading, setLoading] = useState(true)
-  const [lastUpdate, setLastUpdate] = useState(null)
-
+  
+  // Ref para evitar atualização de estado se o componente desmontar
   const mountedRef = useRef(true)
   useEffect(() => {
     mountedRef.current = true
@@ -39,9 +39,9 @@ export default function Partida({ params }) {
   async function load(silent = false) {
     if (!silent) setLoading(true)
     try {
-      // ✅ BUSCA SINCRONIZADA COM CACHE ON-DEMAND
+      // ✅ BUSCA OTIMIZADA: Chama a API que agora tem Cache!
       const [res, resPatro] = await Promise.all([
-        fetch(`/api/partida?id=${jogoId}`, { cache: 'no-store' }), // Detalhe específico sempre novo ou via Tag
+        fetch(`/api/partida?id=${jogoId}`, { cache: 'no-store' }), 
         fetch('/api/admin/patrocinios', { cache: 'no-store' })
       ])
       
@@ -56,7 +56,6 @@ export default function Partida({ params }) {
         setData(d)
       }
       setPatrocinios(asArray(p))
-      setLastUpdate(new Date())
     } catch (e) {
       console.error(e)
       if (mountedRef.current) setData({ error: 'Falha de conexão com o servidor' })
@@ -67,9 +66,10 @@ export default function Partida({ params }) {
 
   useEffect(() => {
     load(false)
+    // Atualiza a cada 15 segundos (O Cache segura a onda no servidor)
     const t = setInterval(() => {
       if (document.visibilityState === 'visible') load(true)
-    }, 15000) // 15 segundos para não pesar o banco
+    }, 15000) 
     return () => clearInterval(t)
   }, [jogoId])
 

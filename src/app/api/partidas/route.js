@@ -1,74 +1,68 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 
-export const dynamic = 'force-dynamic'
+// ❌ REMOVIDO 'force-dynamic' para permitir o Cache da Vercel
 
 function supabaseAnon() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  if (!url || !key) throw new Error('Env ausente')
-  return createClient(url, key, { auth: { persistSession: false } })
-}
-
-function json(data, init = {}) {
-  const res = NextResponse.json(data, init)
-  res.headers.set('Cache-Control', 'no-store')
-  return res
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    { auth: { persistSession: false } }
+  )
 }
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const etapaIdParam = searchParams.get('etapa_id')
+  const supabase = supabaseAnon()
 
-  let supabase
   try {
-    supabase = supabaseAnon()
-  } catch (e) {
-    return json({ error: e.message }, { status: 500 })
-  }
+    // 1. DESCOBRE O ID DA ETAPA (Se não vier na URL, pega a ativa)
+    let etapaId = etapaIdParam
+    
+    if (!etapaId) {
+        const { data: active } = await supabase.from('etapas').select('id').eq('status', 'EM_ANDAMENTO').limit(1).single()
+        if (active) {
+            etapaId = active.id
+        } else {
+            const { data: last } = await supabase.from('etapas').select('id').order('created_at', { ascending: false }).limit(1).single()
+            etapaId = last?.id
+        }
+    }
 
-  // etapa atual (mesma lógica do /api/tabela)
-  let etapa = null
-  if (etapaIdParam) {
-    const { data, error } = await supabase.from('etapas').select('*').eq('id', Number(etapaIdParam)).single()
-    if (error) return json({ error: error.message }, { status: 500 })
-    etapa = data
-  } else {
-    const { data, error } = await supabase.from('etapas').select('*').order('created_at', { ascending: false }).limit(1)
-    if (error) return json({ error: error.message }, { status: 500 })
-    etapa = data?.[0] || null
-  }
+    // Se não tiver etapa nenhuma, retorna lista vazia (com cache)
+    if (!etapaId) {
+        return NextResponse.json([], { 
+            headers: { 'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=59' } 
+        })
+    }
 
-  if (!etapa) return json({ etapa: null, jogos: [] })
-
-  // jogos + nomes
-  const { data: jogos, error } = await supabase
-    .from('jogos')
-    .select(`
-      id, etapa_id, rodada, data_jogo, hora_jogo, start_at, equipe_a_id, equipe_b_id, gols_a, gols_b, finalizado,
-      equipeA:equipes!jogos_equipe_a_id_fkey(id, nome_equipe),
-      equipeB:equipes!jogos_equipe_b_id_fkey(id, nome_equipe)
-    `)
-    .eq('etapa_id', etapa.id)
-    .order('rodada', { ascending: true })
-    .order('id', { ascending: true })
-
-  if (error) {
-    // fallback sem hora/start_at se não existir coluna
-    const { data: jogos2, error: e2 } = await supabase
+    // 2. BUSCA OS JOGOS
+    // Usamos select('*') para garantir que pega hora_jogo, horario, start_at (qualquer que seja o nome)
+    const { data: jogos, error } = await supabase
       .from('jogos')
       .select(`
-        id, etapa_id, rodada, data_jogo, equipe_a_id, equipe_b_id, gols_a, gols_b, finalizado,
-        equipeA:equipes!jogos_equipe_a_id_fkey(id, nome_equipe),
-        equipeB:equipes!jogos_equipe_b_id_fkey(id, nome_equipe)
+        *,
+        equipeA:equipes!equipe_a_id(id, nome_equipe, logo_url),
+        equipeB:equipes!equipe_b_id(id, nome_equipe, logo_url)
       `)
-      .eq('etapa_id', etapa.id)
+      .eq('etapa_id', etapaId)
       .order('rodada', { ascending: true })
+      .order('data_jogo', { ascending: true }) // Ordena por data
       .order('id', { ascending: true })
 
-    if (e2) return json({ error: e2.message }, { status: 500 })
-    return json({ etapa, jogos: jogos2 || [] })
-  }
+    if (error) throw error
 
-  return json({ etapa, jogos: jogos || [] })
+    // 3. RETORNA O ARRAY DIRETO (Igual o Front espera) + CACHE
+    return NextResponse.json(jogos || [], {
+      status: 200,
+      headers: {
+        // A MÁGICA: Cache de 30 segundos
+        'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=59',
+      },
+    })
+
+  } catch (e) {
+    return NextResponse.json({ error: e.message }, { status: 500 })
+  }
 }

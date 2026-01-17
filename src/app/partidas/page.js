@@ -3,30 +3,33 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Loader2, Calendar, Trophy, Volume2, Clock } from 'lucide-react'
 
+// Função auxiliar para evitar quebras no JSON
 async function safeJson(res) {
-  try { return await res.json() } catch { return {} }
+  try { return await res.json() } catch { return [] }
 }
 
 export default function Partidas() {
   const [loading, setLoading] = useState(true)
-  const [data, setData] = useState({ jogos: [], equipes: [] })
+  const [jogos, setJogos] = useState([]) // ✅ Simplificado para guardar direto a lista
   const [patrocinios, setPatrocinios] = useState([])
   const [indexCarrossel, setIndexCarrossel] = useState(0)
 
   async function loadData() {
-    if (!data.jogos?.length) setLoading(true)
+    if (jogos.length === 0) setLoading(true)
     try {
-        // ✅ CHAMADA BLINDADA: Removido propriedades de servidor para evitar erros no client
+        // ✅ AGORA APONTANDO PARA A API CERTA (LISTA LEVE)
         const [res, resPatro] = await Promise.all([
-          fetch('/api/ao-vivo', { cache: 'no-store' }), 
+          fetch('/api/partidas', { cache: 'no-store' }), 
           fetch('/api/admin/patrocinios', { cache: 'no-store' })
         ])
         
-        const json = await safeJson(res)
-        const patroData = await resPatro.json().catch(() => [])
+        // A API /api/partidas retorna um Array direto de jogos
+        const dadosJogos = await safeJson(res)
+        const dadosPatro = await resPatro.json().catch(() => [])
         
-        setData(json)
-        setPatrocinios(Array.isArray(patroData) ? patroData : [])
+        // Garante que é um array
+        setJogos(Array.isArray(dadosJogos) ? dadosJogos : [])
+        setPatrocinios(Array.isArray(dadosPatro) ? dadosPatro : [])
     } catch(e) {
         console.error("Erro ao carregar calendário:", e)
     } finally { 
@@ -36,11 +39,12 @@ export default function Partidas() {
 
   useEffect(() => {
     loadData()
-    // Refresh a cada 1 min no calendário (menos frequente que o ao-vivo)
+    // Atualiza a cada 1 minuto (Cache controla o peso no servidor)
     const intervalo = setInterval(loadData, 60000)
     return () => clearInterval(intervalo)
   }, [])
 
+  // Rotação do Carrossel
   useEffect(() => {
     const carrosselItems = patrocinios.filter(p => p.cota === 'CARROSSEL')
     if (carrosselItems.length > 1) {
@@ -55,22 +59,19 @@ export default function Partidas() {
   const patrocinadoresCarrossel = useMemo(() => patrocinios.filter(p => p.cota === 'CARROSSEL'), [patrocinios])
   const patrocinadoresRodape = useMemo(() => patrocinios.filter(p => p.cota === 'RODAPE'), [patrocinios])
 
+  // Agrupamento por Rodada ou Tipo de Jogo
   const grupos = useMemo(() => {
-      if (!data.jogos || !Array.isArray(data.jogos)) return {}
-      return data.jogos.reduce((acc, j) => {
+      if (!jogos || !Array.isArray(jogos)) return {}
+      return jogos.reduce((acc, j) => {
+          // Se for GRUPO, agrupa por Rodada. Se for MATA-MATA, agrupa pelo Tipo (Final, Semi, etc)
           const key = j.tipo_jogo === 'GRUPO' ? `RODADA ${j.rodada}` : j.tipo_jogo
           if(!acc[key]) acc[key] = []
           acc[key].push(j)
           return acc
       }, {})
-  }, [data.jogos])
+  }, [jogos])
 
-  const equipeMap = useMemo(() => 
-    new Map((data.equipes || []).map(e => [e.id, e.nome_equipe])),
-    [data.equipes]
-  )
-
-  if (loading && !data.jogos?.length) {
+  if (loading && jogos.length === 0) {
     return (
         <main className="min-h-screen bg-slate-50 flex items-center justify-center">
             <div className="flex flex-col items-center gap-3">
@@ -119,9 +120,9 @@ export default function Partidas() {
             <div className="text-center p-20 text-slate-400 font-bold bg-white rounded-3xl border border-dashed border-slate-300">Nenhum jogo agendado para esta competição.</div>
         ) : (
             <div className="space-y-12">
-                {Object.entries(grupos).map(([titulo, jogos], index) => (
+                {Object.entries(grupos).map(([titulo, listaJogos], index) => (
                     <div key={titulo} className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-                        {/* CARROSSEL ESTRATÉGICO */}
+                        {/* CARROSSEL ESTRATÉGICO NO MEIO DA LISTA */}
                         {index === 1 && patrocinadoresCarrossel.length > 0 && (
                           <div className="mb-8 rounded-2xl overflow-hidden border border-slate-200 shadow-sm transition-all hover:shadow-md">
                             <a href={patrocinadoresCarrossel[indexCarrossel].link_destino || '#'} target="_blank" className="relative block h-20 md:h-24">
@@ -136,27 +137,46 @@ export default function Partidas() {
                         </h3>
 
                         <div className="grid gap-4">
-                            {jogos.map(j => (
+                            {listaJogos.map(j => (
                                 <div key={j.id} className={`bg-white p-5 rounded-2xl border transition-all shadow-sm flex flex-col md:flex-row items-center justify-between gap-4 border-slate-200 ${j.status === 'EM_ANDAMENTO' ? 'ring-2 ring-red-500 shadow-red-100' : 'hover:border-blue-300 hover:shadow-md'}`}>
+                                    
+                                    {/* Data e Hora */}
                                     <div className="flex md:flex-col items-center md:items-start gap-3 md:gap-1 w-full md:w-32 text-slate-400">
-                                        <div className="text-[11px] font-black uppercase tracking-tighter flex items-center gap-1"><Calendar size={12}/> {j.data_jogo ? new Date(j.data_jogo + 'T00:00:00').toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit'}) : '--/--'}</div>
-                                        <div className="text-[11px] font-black text-blue-600 uppercase tracking-tighter flex items-center gap-1"><Clock size={12}/> {j.horario ? String(j.horario).slice(0,5) : '--:--'}</div>
+                                        <div className="text-[11px] font-black uppercase tracking-tighter flex items-center gap-1">
+                                            <Calendar size={12}/> {j.data_jogo ? new Date(j.data_jogo + 'T00:00:00').toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit'}) : '--/--'}
+                                        </div>
+                                        <div className="text-[11px] font-black text-blue-600 uppercase tracking-tighter flex items-center gap-1">
+                                            <Clock size={12}/> {j.horario ? String(j.horario).slice(0,5) : '--:--'}
+                                        </div>
                                     </div>
                                     
+                                    {/* Placar */}
                                     <div className="flex-1 flex flex-col items-center w-full px-4">
                                         <div className="flex items-center justify-between w-full gap-2">
-                                            <span className="font-black text-slate-800 text-xs md:text-sm text-right flex-1 truncate uppercase tracking-tighter">{equipeMap.get(j.equipe_a_id) || 'A definir'}</span>
+                                            {/* Time A */}
+                                            <span className="font-black text-slate-800 text-xs md:text-sm text-right flex-1 truncate uppercase tracking-tighter">
+                                                {j.equipeA?.nome_equipe || 'A definir'}
+                                            </span>
+                                            
+                                            {/* Score Box */}
                                             <div className="flex items-center justify-center gap-2 px-4 py-1.5 rounded-xl font-black text-lg md:text-xl min-w-[80px] bg-slate-50 border border-slate-200 shadow-inner">
                                                 <span className={j.gols_a > j.gols_b ? 'text-blue-600' : ''}>{j.gols_a ?? 0}</span>
                                                 <span className="text-slate-300 text-xs font-light">×</span>
                                                 <span className={j.gols_b > j.gols_a ? 'text-blue-600' : ''}>{j.gols_b ?? 0}</span>
                                             </div>
-                                            <span className="font-black text-slate-800 text-xs md:text-sm text-left flex-1 truncate uppercase tracking-tighter">{equipeMap.get(j.equipe_b_id) || 'B definir'}</span>
+                                            
+                                            {/* Time B */}
+                                            <span className="font-black text-slate-800 text-xs md:text-sm text-left flex-1 truncate uppercase tracking-tighter">
+                                                {j.equipeB?.nome_equipe || 'B definir'}
+                                            </span>
                                         </div>
                                     </div>
 
+                                    {/* Botão Detalhes (LINK CORRIGIDO) */}
                                     <div className="w-full md:w-32 flex justify-center md:justify-end">
-                                        <Link href="/ao-vivo" className="text-[10px] font-black uppercase text-blue-600 border-2 border-blue-600 px-5 py-2 rounded-xl hover:bg-blue-600 hover:text-white transition-all shadow-sm">Detalhes</Link>
+                                        <Link href={`/partidas/${j.id}`} className="text-[10px] font-black uppercase text-blue-600 border-2 border-blue-600 px-5 py-2 rounded-xl hover:bg-blue-600 hover:text-white transition-all shadow-sm">
+                                            Detalhes
+                                        </Link>
                                     </div>
                                 </div>
                             ))}
