@@ -1,7 +1,7 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { createClient } from '@supabase/supabase-js'
-import { Activity, Users, Smartphone, Monitor, BarChart3, AlertCircle } from 'lucide-react'
+import { Activity, Users, Eye, ArrowUp, Zap, Clock } from 'lucide-react'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -9,45 +9,64 @@ const supabase = createClient(
 )
 
 export default function Monitoramento() {
-  const [users, setUsers] = useState({})
-  const [total, setTotal] = useState(0)
-  const [dbLatency, setDbLatency] = useState(null)
+  const [usersByPage, setUsersByPage] = useState({})
+  const [totalOnline, setTotalOnline] = useState(0)
+  const [totalAccumulated, setTotalAccumulated] = useState(0)
+  const [startTime, setStartTime] = useState(null)
+  
+  // Refs para não perder contagem entre renderizações
+  const seenIds = useRef(new Set())
+  
+  // Histórico de latência
+  const [latencyHistory, setLatencyHistory] = useState([]) 
 
   useEffect(() => {
-    // 1. MONITORAMENTO DE USUÁRIOS (REALTIME)
+    setStartTime(new Date())
+
+    // 1. MONITORAMENTO DE USUÁRIOS E ACUMULAÇÃO
     const channel = supabase.channel('online-users')
     
-    channel
-      .on('presence', { event: 'sync' }, () => {
+    channel.on('presence', { event: 'sync' }, () => {
         const state = channel.presenceState()
-        const allUsers = []
+        const currentUsers = []
         
-        // Processa os dados brutos do Supabase
+        // Percorre todos os usuários conectados agora
         for (const id in state) {
-          const userSessions = state[id]
-          userSessions.forEach(session => allUsers.push(session))
+          state[id].forEach(session => {
+            currentUsers.push(session)
+            
+            // LÓGICA DO ACUMULADOR (CLIENT-SIDE)
+            // Se esse ID de usuário ainda não foi visto nesta sessão do admin, adiciona
+            // O ID vem do tracker que criamos (Math.random)
+            if (session.presence_ref && !seenIds.current.has(session.presence_ref)) {
+                seenIds.current.add(session.presence_ref)
+            }
+          })
         }
 
-        setTotal(allUsers.length)
+        setTotalOnline(currentUsers.length)
+        setTotalAccumulated(seenIds.current.size) // Atualiza o total visto
 
         // Agrupa por página
-        const porPagina = allUsers.reduce((acc, user) => {
+        const porPagina = currentUsers.reduce((acc, user) => {
           const page = user.page || 'Desconhecido'
           acc[page] = (acc[page] || 0) + 1
           return acc
         }, {})
-        
-        setUsers(porPagina)
+        setUsersByPage(porPagina)
       })
       .subscribe()
 
-    // 2. MONITORAMENTO DE SAÚDE DO BANCO (PING)
-    const interval = setInterval(async () => {
-        const start = Date.now()
-        await supabase.from('jogos').select('id').limit(1).maybeSingle()
-        const end = Date.now()
-        setDbLatency(end - start)
-    }, 5000) // Testa a cada 5 segundos
+    // 2. MONITORAMENTO DE SAÚDE (PING)
+    const pingServer = async () => {
+        const start = performance.now()
+        await supabase.from('jogos').select('id', { count: 'exact', head: true }).limit(1)
+        const end = performance.now()
+        setLatencyHistory(prev => [...prev, Math.round(end - start)].slice(-60))
+    }
+
+    pingServer()
+    const interval = setInterval(pingServer, 5000)
 
     return () => {
       supabase.removeChannel(channel)
@@ -55,112 +74,115 @@ export default function Monitoramento() {
     }
   }, [])
 
-  // Definição de cores baseada na latência
+  // Estatísticas de Latência
+  const stats = useMemo(() => {
+      if (latencyHistory.length === 0) return { current: 0, max: 0, avg: 0 }
+      const current = latencyHistory[latencyHistory.length - 1]
+      const max = Math.max(...latencyHistory)
+      const sum = latencyHistory.reduce((a, b) => a + b, 0)
+      const avg = Math.round(sum / latencyHistory.length)
+      return { current, max, avg }
+  }, [latencyHistory])
+
   const getHealthColor = (ms) => {
-      if(!ms) return 'bg-slate-200'
-      if(ms < 200) return 'bg-green-500' // Ótimo
-      if(ms < 800) return 'bg-yellow-500' // Atenção
-      return 'bg-red-600 animate-pulse' // Perigo
+      if(!ms) return 'text-slate-500'
+      if(ms < 300) return 'text-green-400'
+      if(ms < 800) return 'text-yellow-400'
+      return 'text-red-500 animate-pulse'
+  }
+
+  // Formata o tempo decorrido
+  const getElapsedTime = () => {
+      if (!startTime) return '0min'
+      const diffMs = new Date() - startTime
+      const diffMins = Math.floor(diffMs / 60000)
+      return `${diffMins} min`
   }
 
   return (
-    <main className="min-h-screen bg-slate-900 text-white p-6 md:p-12 font-mono">
-      <div className="max-w-6xl mx-auto">
+    <main className="min-h-screen bg-slate-950 text-white p-4 md:p-8 font-mono">
+      <div className="max-w-7xl mx-auto">
         
-        <div className="flex justify-between items-center mb-10 border-b border-slate-700 pb-6">
+        {/* CABEÇALHO */}
+        <div className="flex justify-between items-end mb-8 border-b border-slate-800 pb-4">
             <div>
-                <h1 className="text-3xl font-black uppercase tracking-widest text-blue-400 flex items-center gap-3">
-                    <Activity className="animate-pulse" /> Monitoramento Real-Time
+                <h1 className="text-2xl font-black uppercase tracking-widest text-blue-500 flex items-center gap-2">
+                    <Activity className="animate-pulse"/> Sala de Comando
                 </h1>
-                <p className="text-slate-400 text-sm mt-1">Torneio Pérolas do Vale • Status do Servidor</p>
+                <p className="text-xs text-slate-500 mt-1">Monitoramento em Tempo Real (Sem Carga no DB)</p>
             </div>
-            
-            <div className="text-right">
-                <div className="flex items-center gap-2 justify-end">
-                    <span className={`w-3 h-3 rounded-full ${getHealthColor(dbLatency)}`}></span>
-                    <span className="font-bold">{dbLatency ? `${dbLatency}ms` : '---'}</span>
-                </div>
-                <p className="text-[10px] uppercase text-slate-500 tracking-widest">Latência do Banco</p>
+            <div className="text-right text-xs text-slate-500">
+                <p>Sessão iniciada há: <span className="text-white font-bold">{getElapsedTime()}</span></p>
             </div>
         </div>
 
-        {/* CARDS PRINCIPAIS */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
-            {/* TOTAL ONLINE */}
-            <div className="bg-slate-800 border border-slate-700 p-6 rounded-2xl relative overflow-hidden group">
-                <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity"><Users size={80}/></div>
-                <h3 className="text-slate-400 text-xs font-black uppercase tracking-[0.2em] mb-2">Usuários Online Agora</h3>
-                <p className="text-6xl font-black text-white">{total}</p>
-                <div className="mt-4 flex gap-2 text-[10px] text-green-400 font-bold uppercase bg-green-400/10 inline-block px-3 py-1 rounded-full">
-                    <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse my-auto"></span> Ao Vivo
+        {/* METRICAS PRINCIPAIS */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+            
+            {/* CARD 1: LATÊNCIA */}
+            <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl">
+                <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest mb-1">Saúde do Banco</p>
+                <div className={`text-3xl font-black ${getHealthColor(stats.current)} flex items-center gap-2`}>
+                    <Zap size={20} className="fill-current"/> {stats.current}ms
+                </div>
+                <div className="mt-2 h-1 w-full bg-slate-800 rounded-full overflow-hidden">
+                    <div className={`h-full ${stats.current < 300 ? 'bg-green-500' : 'bg-red-500'}`} style={{width: `${Math.min(stats.current/10, 100)}%`}}></div>
                 </div>
             </div>
 
-            {/* ANALYTICS EXTERNO */}
-            <div className="bg-slate-800 border border-slate-700 p-6 rounded-2xl flex flex-col justify-center gap-4">
-                <div className="flex items-center gap-3 text-slate-300">
-                    <BarChart3 />
-                    <span className="font-bold text-sm">Painéis Externos (Mais detalhados)</span>
+            {/* CARD 2: PICO DE LATÊNCIA */}
+            <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl">
+                <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest mb-1">Pico (5 min)</p>
+                <div className={`text-3xl font-black ${getHealthColor(stats.max)} flex items-center gap-2`}>
+                    <ArrowUp size={20}/> {stats.max}ms
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                    <a href="https://supabase.com/dashboard/project/_/reports/database" target="_blank" className="bg-emerald-600/20 hover:bg-emerald-600/40 border border-emerald-500/50 text-emerald-400 text-xs font-bold uppercase py-3 rounded-xl text-center transition-colors">
-                        Supabase Health
-                    </a>
-                    <a href="https://vercel.com/dashboard" target="_blank" className="bg-white/5 hover:bg-white/10 border border-white/10 text-white text-xs font-bold uppercase py-3 rounded-xl text-center transition-colors">
-                        Vercel Logs
-                    </a>
+                <p className="text-[10px] text-slate-600 mt-2">Média Estável: {stats.avg}ms</p>
+            </div>
+
+            {/* CARD 3: ONLINE AGORA */}
+            <div className="bg-blue-900/20 border border-blue-500/30 p-5 rounded-2xl relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-4 opacity-10"><Users size={60}/></div>
+                <p className="text-blue-300 text-[10px] font-black uppercase tracking-widest mb-1">Online Agora</p>
+                <div className="text-4xl font-black text-white flex items-center gap-2">
+                    {totalOnline}
+                </div>
+                <div className="flex items-center gap-2 mt-2">
+                    <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                    <span className="text-[10px] uppercase text-blue-200">Ao Vivo</span>
                 </div>
             </div>
 
-            {/* STATUS API */}
-            <div className="bg-slate-800 border border-slate-700 p-6 rounded-2xl">
-                 <h3 className="text-slate-400 text-xs font-black uppercase tracking-[0.2em] mb-4">Cache Check</h3>
-                 <div className="space-y-3">
-                    <div className="flex justify-between items-center text-sm border-b border-slate-700 pb-2">
-                        <span className="text-slate-300">API Partidas</span>
-                        <span className="text-green-400 font-mono text-xs">Cache: 15s</span>
-                    </div>
-                    <div className="flex justify-between items-center text-sm border-b border-slate-700 pb-2">
-                        <span className="text-slate-300">API Tabela</span>
-                        <span className="text-green-400 font-mono text-xs">Cache: 30s</span>
-                    </div>
-                    <div className="flex justify-between items-center text-sm">
-                        <span className="text-slate-300">Home</span>
-                        <span className="text-blue-400 font-mono text-xs">Cache: 1h</span>
-                    </div>
-                 </div>
+            {/* CARD 4: ACUMULADO (A MÁGICA) */}
+            <div className="bg-emerald-900/20 border border-emerald-500/30 p-5 rounded-2xl relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-4 opacity-10"><Eye size={60}/></div>
+                <p className="text-emerald-300 text-[10px] font-black uppercase tracking-widest mb-1">Visitas Acumuladas</p>
+                <div className="text-4xl font-black text-white flex items-center gap-2">
+                    {totalAccumulated}
+                </div>
+                <p className="text-[10px] text-emerald-200/60 mt-2 flex items-center gap-1">
+                    <Clock size={10}/> Nesta sessão do admin
+                </p>
             </div>
         </div>
 
         {/* DETALHE POR PÁGINA */}
-        <h2 className="text-xl font-black uppercase italic text-white mb-6 flex items-center gap-2">
-            <Monitor size={20} className="text-blue-500"/> Tráfego por Página
-        </h2>
-
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {Object.entries(users).sort(([,a], [,b]) => b - a).map(([page, count]) => (
-                <div key={page} className="bg-slate-800 border-l-4 border-blue-500 p-4 rounded-r-xl flex justify-between items-center hover:bg-slate-750 transition-colors">
-                    <span className="font-mono text-sm text-slate-300 truncate max-w-[200px]" title={page}>{page}</span>
-                    <span className="text-2xl font-black text-white">{count}</span>
-                </div>
-            ))}
-            
-            {total === 0 && (
-                <div className="col-span-full py-10 text-center text-slate-600 font-bold border-2 border-dashed border-slate-800 rounded-xl">
-                    Esperando usuários conectarem...
-                </div>
-            )}
-        </div>
-
-        <div className="mt-10 bg-yellow-900/20 border border-yellow-600/30 p-4 rounded-xl flex gap-3 items-start">
-            <AlertCircle className="text-yellow-500 shrink-0" size={20} />
-            <div className="text-xs text-yellow-200/80">
-                <strong>Nota Técnica:</strong> Este painel usa WebSocket (Supabase Realtime). 
-                No plano Grátis do Supabase, o limite é de 200 conexões simultâneas (o painel para de contar se passar disso, mas o site continua funcionando normalmente para os usuários). 
-                Para o site não cair, confie nos indicadores de "Latência do Banco" no topo.
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6">
+            <h3 className="text-sm font-black text-white uppercase tracking-widest mb-6 flex items-center gap-2">
+                <Users size={16} className="text-slate-500"/> Onde eles estão?
+            </h3>
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {Object.entries(usersByPage).sort(([,a], [,b]) => b - a).map(([page, count]) => (
+                    <div key={page} className="flex justify-between items-center bg-slate-950 p-3 rounded-lg border border-slate-800 hover:border-blue-500/50 transition-colors">
+                        <code className="text-xs text-slate-400 truncate max-w-[200px]">{page}</code>
+                        <span className="text-sm font-black text-white bg-slate-800 px-2 py-1 rounded-md min-w-[30px] text-center">{count}</span>
+                    </div>
+                ))}
+                {totalOnline === 0 && (
+                    <div className="col-span-full text-center py-8 text-slate-700 text-xs uppercase tracking-widest">Aguardando conexões...</div>
+                )}
             </div>
         </div>
-
+        
       </div>
     </main>
   )
