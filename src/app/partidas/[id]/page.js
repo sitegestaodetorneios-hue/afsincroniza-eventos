@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { use, useEffect, useMemo, useRef, useState } from 'react' // ✅ ADICIONADO 'use'
 import Link from 'next/link'
 import { ArrowLeft, Loader2, ClipboardList, Shirt, RefreshCcw, Trophy, Volume2, Calendar, Clock, MapPin } from 'lucide-react'
 
@@ -19,8 +19,10 @@ function badge(tipo) {
 }
 
 export default function PartidaDetalhe({ params }) {
-  // Pega ID de forma segura (tratando possíveis promises do Next.js novo)
-  const jogoId = params?.id
+  // 🚨 A MÁGICA DO NEXT.JS 15 ACONTECE AQUI
+  // Precisamos "desembrulhar" a Promise dos parâmetros usando o hook 'use'
+  const resolvedParams = use(params)
+  const jogoId = resolvedParams.id
 
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState({ jogo: null, eventos: [], atletasA: [], atletasB: [] })
@@ -35,25 +37,21 @@ export default function PartidaDetalhe({ params }) {
   async function loadData(silent = false) {
     if (!silent) setLoading(true)
     
-    console.log("🚀 INICIANDO CARGA DO JOGO ID:", jogoId)
+    //console.log("🚀 Buscando ID:", jogoId)
 
     try {
-      // 1. Busca Jogo
-      console.log("📡 Buscando API Partida...")
-      const res = await fetch(`/api/partida?id=${jogoId}`, { cache: 'no-store' })
+      const [res, resPatro] = await Promise.all([
+        fetch(`/api/partida?id=${jogoId}`, { cache: 'no-store' }), 
+        fetch('/api/admin/patrocinios', { cache: 'no-store' })
+      ])
+      
       const d = await safeJson(res)
-      console.log("✅ Dados Jogo recebidos:", d)
-
-      // 2. Busca Patrocínio (Independente)
-      console.log("📡 Buscando Patrocínios...")
-      const resPatro = await fetch('/api/admin/patrocinios', { cache: 'no-store' })
       const p = await safeJson(resPatro)
-      console.log("✅ Patrocínios recebidos")
 
       if (!mountedRef.current) return
 
       if (d.error) {
-        console.error("❌ Erro retornado pela API:", d.error)
+        console.error("❌ Erro API:", d.error)
       } else {
         setData({
             jogo: d.jogo || null,
@@ -65,9 +63,8 @@ export default function PartidaDetalhe({ params }) {
       setPatrocinios(asArray(p))
 
     } catch (e) {
-      console.error("❌ ERRO NO FRONTEND:", e)
+      console.error("❌ Erro Conexão:", e)
     } finally {
-      console.log("🏁 Finalizando Loading...")
       if (mountedRef.current && !silent) setLoading(false)
     }
   }
@@ -77,10 +74,8 @@ export default function PartidaDetalhe({ params }) {
         loadData(false)
         const t = setInterval(() => { if (document.visibilityState === 'visible') loadData(true) }, 15000) 
         return () => clearInterval(t)
-    } else {
-        setLoading(false) // Se não tem ID, para de carregar
     }
-  }, [jogoId])
+  }, [jogoId]) // Dependência correta
 
   const patrocinadorMaster = useMemo(() => patrocinios.find(p => p.cota === 'MASTER'), [patrocinios])
   const patrocinadoresRodape = useMemo(() => patrocinios.filter(p => p.cota === 'RODAPE'), [patrocinios])
@@ -97,7 +92,6 @@ export default function PartidaDetalhe({ params }) {
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center gap-4">
         <Loader2 className="animate-spin text-blue-600" size={40} />
         <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Carregando Súmula...</p>
-        <p className="text-[10px] text-slate-300">ID: {jogoId}</p>
       </div>
     )
   }
@@ -106,7 +100,7 @@ export default function PartidaDetalhe({ params }) {
       return (
         <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-10 text-center">
             <h1 className="text-2xl font-black text-slate-900 mb-2">Jogo não encontrado</h1>
-            <p className="text-slate-500 mb-6">Verifique se o ID {jogoId} está correto.</p>
+            <p className="text-slate-500 mb-6">ID solicitado: {jogoId}</p>
             <Link href="/partidas" className="text-blue-600 font-bold hover:underline">Voltar para o calendário</Link>
         </div>
       )
@@ -159,7 +153,7 @@ export default function PartidaDetalhe({ params }) {
                     <div className="flex-1 flex flex-col items-center md:items-start text-center md:text-left">
                         {logoA && <img src={logoA} className="h-16 w-16 md:h-20 md:w-20 object-contain mb-4 bg-white rounded-full p-2" alt="Logo A"/>}
                         <h2 className="text-2xl md:text-4xl font-black uppercase italic tracking-tighter leading-none">{nomeA}</h2>
-                        <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mt-2">Mandante</p>
+                        <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mt-2">Grupo A</p>
                     </div>
 
                     <div className="flex flex-col items-center px-8">
@@ -178,7 +172,7 @@ export default function PartidaDetalhe({ params }) {
                     <div className="flex-1 flex flex-col items-center md:items-end text-center md:text-right">
                         {logoB && <img src={logoB} className="h-16 w-16 md:h-20 md:w-20 object-contain mb-4 bg-white rounded-full p-2" alt="Logo B"/>}
                         <h2 className="text-2xl md:text-4xl font-black uppercase italic tracking-tighter leading-none">{nomeB}</h2>
-                        <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mt-2">Visitante</p>
+                        <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mt-2">Grupo B</p>
                     </div>
                   </div>
                 </div>
