@@ -11,10 +11,9 @@ export default function Partidas() {
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState({ jogos: [], menu: [], etapa: null })
   const [patrocinios, setPatrocinios] = useState([])
-  const [filtroId, setFiltroId] = useState('') // Controle do Seletor
+  const [filtroId, setFiltroId] = useState('') 
   const [indexCarrossel, setIndexCarrossel] = useState(0)
 
-  // Carrega os dados (aceita ID opcional)
   async function loadData(id = '') {
     setLoading(true)
     try {
@@ -36,7 +35,7 @@ export default function Partidas() {
         })
         setPatrocinios(Array.isArray(patroData) ? patroData : [])
 
-        // Se carregou sem filtro, atualiza o filtro com o ID que veio da API
+        // ✅ CORREÇÃO: Se carregou automático, força o seletor a mostrar a etapa certa
         if (!targetId && json.etapa?.id) {
             setFiltroId(json.etapa.id)
         }
@@ -48,36 +47,17 @@ export default function Partidas() {
     }
   }
 
-  // Carga inicial
   useEffect(() => {
     loadData()
   }, [])
 
-  // Quando muda o seletor, recarrega
   const handleChangeEtapa = (e) => {
       const novoId = e.target.value
       setFiltroId(novoId)
       loadData(novoId)
   }
 
-  // Refresh automático silencioso (só se não estiver carregando)
-  useEffect(() => {
-    const interval = setInterval(() => {
-        if (!loading) {
-            // Re-executa a busca sem setar loading true visualmente
-            const url = filtroId ? `/api/partidas?etapa_id=${filtroId}` : '/api/partidas'
-            fetch(url, { cache: 'no-store' })
-                .then(r => r.json())
-                .then(json => {
-                    setData(prev => ({ ...prev, jogos: json.jogos || [] }))
-                })
-                .catch(console.error)
-        }
-    }, 60000)
-    return () => clearInterval(interval)
-  }, [filtroId, loading])
-
-  // Rotação do Carrossel
+  // Rotação Carrossel
   useEffect(() => {
     const carrosselItems = patrocinios.filter(p => p.cota === 'CARROSSEL')
     if (carrosselItems.length > 1) {
@@ -92,7 +72,6 @@ export default function Partidas() {
   const patrocinadoresCarrossel = useMemo(() => patrocinios.filter(p => p.cota === 'CARROSSEL'), [patrocinios])
   const patrocinadoresRodape = useMemo(() => patrocinios.filter(p => p.cota === 'RODAPE'), [patrocinios])
 
-  // Agrupamento
   const grupos = useMemo(() => {
       if (!data.jogos || !Array.isArray(data.jogos)) return {}
       return data.jogos.reduce((acc, j) => {
@@ -125,10 +104,9 @@ export default function Partidas() {
                 <ArrowLeft size={18} /> Início
               </Link>
               
-              {/* O SELETOR VOLTOU! */}
               <div className="relative group">
                   <select 
-                    value={filtroId} 
+                    value={filtroId || ''} 
                     onChange={handleChangeEtapa} 
                     className="appearance-none bg-white border-2 border-slate-200 text-slate-900 font-black text-sm uppercase py-2 pl-4 pr-10 rounded-xl cursor-pointer hover:border-blue-500 outline-none shadow-sm min-w-[200px]"
                   >
@@ -164,13 +142,12 @@ export default function Partidas() {
 
         {Object.keys(grupos).length === 0 ? (
             <div className="text-center p-20 text-slate-400 font-bold bg-white rounded-3xl border border-dashed border-slate-300">
-                Nenhum jogo agendado para "{data.etapa?.titulo}".
+                Nenhum jogo encontrado para "{data.etapa?.titulo}".
             </div>
         ) : (
             <div className="space-y-12">
                 {Object.entries(grupos).map(([titulo, listaJogos], index) => (
                     <div key={titulo} className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-                        {/* CARROSSEL NO MEIO DA LISTA */}
                         {index === 1 && patrocinadoresCarrossel.length > 0 && (
                           <div className="mb-8 rounded-2xl overflow-hidden border border-slate-200 shadow-sm transition-all hover:shadow-md">
                             <a href={patrocinadoresCarrossel[indexCarrossel].link_destino || '#'} target="_blank" className="relative block h-20 md:h-24">
@@ -187,8 +164,6 @@ export default function Partidas() {
                         <div className="grid gap-4">
                             {listaJogos.map(j => (
                                 <div key={j.id} className={`bg-white p-5 rounded-2xl border transition-all shadow-sm flex flex-col md:flex-row items-center justify-between gap-4 border-slate-200 ${j.status === 'EM_ANDAMENTO' ? 'ring-2 ring-red-500 shadow-red-100' : 'hover:border-blue-300 hover:shadow-md'}`}>
-                                    
-                                    {/* Data e Hora */}
                                     <div className="flex md:flex-col items-center md:items-start gap-3 md:gap-1 w-full md:w-32 text-slate-400">
                                         <div className="text-[11px] font-black uppercase tracking-tighter flex items-center gap-1">
                                             <Calendar size={12}/> {j.data_jogo ? new Date(j.data_jogo + 'T00:00:00').toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit'}) : '--/--'}
@@ -198,7 +173,6 @@ export default function Partidas() {
                                         </div>
                                     </div>
                                     
-                                    {/* Placar */}
                                     <div className="flex-1 flex flex-col items-center w-full px-4">
                                         <div className="flex items-center justify-between w-full gap-2">
                                             <span className="font-black text-slate-800 text-xs md:text-sm text-right flex-1 truncate uppercase tracking-tighter">
@@ -217,7 +191,6 @@ export default function Partidas() {
                                         </div>
                                     </div>
 
-                                    {/* Botão Detalhes */}
                                     <div className="w-full md:w-32 flex justify-center md:justify-end">
                                         <Link href={`/partidas/${j.id}`} className="text-[10px] font-black uppercase text-blue-600 border-2 border-blue-600 px-5 py-2 rounded-xl hover:bg-blue-600 hover:text-white transition-all shadow-sm">
                                             Detalhes
@@ -231,7 +204,6 @@ export default function Partidas() {
             </div>
         )}
 
-        {/* FOOTER */}
         <footer className="mt-20 pt-10 border-t border-slate-200">
           {patrocinadoresRodape.length > 0 && (
             <div className="mb-12 text-center">

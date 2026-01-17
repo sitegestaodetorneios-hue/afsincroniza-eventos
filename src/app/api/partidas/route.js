@@ -15,47 +15,53 @@ export async function GET(request) {
   const supabase = supabaseAnon()
 
   try {
-    // 1. BUSCA O MENU (Lista de todas as etapas para o dropdown)
-    const { data: menu } = await supabase
+    // 1. BUSCA O MENU COMPLETO
+    const { data: menu, error: errMenu } = await supabase
         .from('etapas')
         .select('id, titulo, status, modalidade')
         .order('created_at', { ascending: false })
+    
+    if (errMenu) throw errMenu
 
-    // 2. DEFINE QUAL ETAPA MOSTRAR
-    // Se veio ID na URL, usa ele. Se não, tenta achar a "EM_ANDAMENTO" ou a última criada.
+    // 2. DEFINE QUAL ETAPA MOSTRAR (Lógica Blindada)
     let etapaId = etapaIdParam ? Number(etapaIdParam) : null
     let etapaAtual = null
 
     if (etapaId) {
+        // Se o usuário clicou no menu, respeita a escolha dele
         etapaAtual = menu?.find(e => e.id === etapaId)
     } else {
-        etapaAtual = menu?.find(e => e.status === 'EM_ANDAMENTO') || menu?.[0]
+        // Se entrou direto na página:
+        // 1º Tenta pegar a 'EM_ANDAMENTO'
+        etapaAtual = menu?.find(e => e.status === 'EM_ANDAMENTO')
+        // 2º Se não tiver nenhuma ativa, pega a última criada (topo da lista)
+        if (!etapaAtual) etapaAtual = menu?.[0]
+        
         etapaId = etapaAtual?.id
     }
 
     if (!etapaId) {
-        // Se não tem etapa nenhuma cadastrada
-        return NextResponse.json({ jogos: [], menu: [], etapa: null }, { 
-            headers: { 'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=59' } 
-        })
+        return NextResponse.json({ jogos: [], menu: [], etapa: null })
     }
 
-    // 3. BUSCA OS JOGOS DA ETAPA SELECIONADA
+    // 3. BUSCA OS JOGOS (COM A CORREÇÃO DA CHAVE ESTRANGEIRA)
     const { data: jogos, error } = await supabase
       .from('jogos')
       .select(`
         *,
-        equipeA:equipes!equipe_a_id(id, nome_equipe, logo_url),
-        equipeB:equipes!equipe_b_id(id, nome_equipe, logo_url)
+        equipeA:equipes!jogos_equipe_a_id_fkey(id, nome_equipe, logo_url),
+        equipeB:equipes!jogos_equipe_b_id_fkey(id, nome_equipe, logo_url)
       `)
       .eq('etapa_id', etapaId)
       .order('rodada', { ascending: true })
       .order('data_jogo', { ascending: true })
-      .order('horario', { ascending: true }) // Ordena por hora para ficar organizado
+      .order('horario', { ascending: true })
 
-    if (error) throw error
+    if (error) {
+        console.error("Erro Supabase Jogos:", error.message)
+        throw error
+    }
 
-    // 4. RETORNA TUDO (Jogos + Menu + Etapa Atual)
     return NextResponse.json({
         jogos: jogos || [],
         menu: menu || [],
@@ -68,6 +74,7 @@ export async function GET(request) {
     })
 
   } catch (e) {
+    console.error("ERRO API PARTIDAS:", e.message)
     return NextResponse.json({ error: e.message }, { status: 500 })
   }
 }
