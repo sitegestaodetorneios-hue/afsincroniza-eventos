@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 
-// ⚠️ REMOVEMOS 'force-dynamic' e 'revalidate' para permitir o Cache Manual
+// ⚠️ REMOVIDOS 'force-dynamic' e 'revalidate' para o Cache funcionar
 
 function supabaseAnon() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -37,7 +37,11 @@ export async function GET(request) {
   }
 
   if (!etapa) {
-    return NextResponse.json({ etapa: null, jogos: [], eventos: [] })
+    // Retornamos vazio, mas com cache também para não fritar o banco se não tiver nada
+    return NextResponse.json({ etapa: null, jogos: [], eventos: [] }, {
+      status: 200, 
+      headers: { 'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=59' }
+    })
   }
 
   // 2) JOGOS
@@ -54,10 +58,10 @@ export async function GET(request) {
     new Set((jogos || []).flatMap(j => [j.equipe_a_id, j.equipe_b_id]))
   )
 
-  // 3) EQUIPES
+  // 3) EQUIPES - VOLTEI PARA O ORIGINAL (SEM logo_url)
   const { data: equipes, error: errEq } = await supabase
     .from('equipes')
-    .select('id, nome_equipe, logo_url') // Adicionei logo_url por garantia
+    .select('id, nome_equipe') 
     .in('id', equipeIds)
 
   if (errEq) return NextResponse.json({ error: errEq.message }, { status: 500 })
@@ -88,7 +92,7 @@ export async function GET(request) {
     atletas = at || []
   }
 
-  // ✅ AQUI ESTÁ A MÁGICA DO CACHE
+  // ✅ RESPOSTA COM CACHE ATIVADO
   return NextResponse.json({
     etapa,
     jogos: jogos || [],
@@ -99,8 +103,6 @@ export async function GET(request) {
   }, {
     status: 200,
     headers: {
-      // s-maxage=30: A Vercel guarda por 30 segundos (HIT)
-      // stale-while-revalidate=59: Permite atualização em segundo plano
       'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=59',
     }
   })
