@@ -15,28 +15,21 @@ export async function GET(request) {
   const supabase = supabaseAnon()
 
   try {
-    // 1. BUSCA O MENU COMPLETO
-    const { data: menu, error: errMenu } = await supabase
+    // 1. BUSCA O MENU
+    const { data: menu } = await supabase
         .from('etapas')
         .select('id, titulo, status, modalidade')
         .order('created_at', { ascending: false })
-    
-    if (errMenu) throw errMenu
 
-    // 2. DEFINE QUAL ETAPA MOSTRAR (Lógica Blindada)
+    // 2. DEFINE ETAPA
     let etapaId = etapaIdParam ? Number(etapaIdParam) : null
     let etapaAtual = null
 
     if (etapaId) {
-        // Se o usuário clicou no menu, respeita a escolha dele
         etapaAtual = menu?.find(e => e.id === etapaId)
     } else {
-        // Se entrou direto na página:
-        // 1º Tenta pegar a 'EM_ANDAMENTO'
-        etapaAtual = menu?.find(e => e.status === 'EM_ANDAMENTO')
-        // 2º Se não tiver nenhuma ativa, pega a última criada (topo da lista)
-        if (!etapaAtual) etapaAtual = menu?.[0]
-        
+        // Tenta pegar EM_ANDAMENTO, senão pega a primeira
+        etapaAtual = menu?.find(e => e.status === 'EM_ANDAMENTO') || menu?.[0]
         etapaId = etapaAtual?.id
     }
 
@@ -44,26 +37,47 @@ export async function GET(request) {
         return NextResponse.json({ jogos: [], menu: [], etapa: null })
     }
 
-    // 3. BUSCA OS JOGOS (COM A CORREÇÃO DA CHAVE ESTRANGEIRA)
-    const { data: jogos, error } = await supabase
+    // 3. BUSCA JOGOS (SEM JOIN COMPLICADO - SELECT SIMPLES)
+    const { data: jogos, error: errJogos } = await supabase
       .from('jogos')
-      .select(`
-        *,
-        equipeA:equipes!jogos_equipe_a_id_fkey(id, nome_equipe, logo_url),
-        equipeB:equipes!jogos_equipe_b_id_fkey(id, nome_equipe, logo_url)
-      `)
+      .select('*') // Pega tudo, sem tentar adivinhar relacionamento
       .eq('etapa_id', etapaId)
       .order('rodada', { ascending: true })
       .order('data_jogo', { ascending: true })
       .order('horario', { ascending: true })
 
-    if (error) {
-        console.error("Erro Supabase Jogos:", error.message)
-        throw error
+    if (errJogos) throw errJogos
+
+    // 4. BUSCA OS TIMES MANUALMENTE (Para não falhar nunca)
+    let jogosCompletos = []
+    
+    if (jogos && jogos.length > 0) {
+        // Pega todos os IDs de times envolvidos nesses jogos
+        const idsTimes = [
+            ...new Set(jogos.flatMap(j => [j.equipe_a_id, j.equipe_b_id]))
+        ].filter(Boolean) // Remove nulos
+
+        // Busca os nomes desses times
+        const { data: times } = await supabase
+            .from('equipes')
+            .select('id, nome_equipe, logo_url')
+            .in('id', idsTimes)
+
+        // Cria um mapa para acesso rápido: { 1: {nome: 'Time A'}, 2: {nome: 'Time B'} }
+        const mapaTimes = {}
+        times?.forEach(t => mapaTimes[t.id] = t)
+
+        // Junta tudo manualmente
+        jogosCompletos = jogos.map(j => ({
+            ...j,
+            equipeA: mapaTimes[j.equipe_a_id] || { nome_equipe: 'A Definir' },
+            equipeB: mapaTimes[j.equipe_b_id] || { nome_equipe: 'A Definir' }
+        }))
     }
 
+    // 5. RETORNA
     return NextResponse.json({
-        jogos: jogos || [],
+        jogos: jogosCompletos,
         menu: menu || [],
         etapa: etapaAtual
     }, {
