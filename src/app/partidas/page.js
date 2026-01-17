@@ -1,35 +1,46 @@
 'use client'
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Loader2, Calendar, Trophy, Volume2, Clock } from 'lucide-react'
+import { ArrowLeft, Loader2, Calendar, Trophy, Volume2, Clock, ChevronDown } from 'lucide-react'
 
-// Função auxiliar para evitar quebras no JSON
 async function safeJson(res) {
-  try { return await res.json() } catch { return [] }
+  try { return await res.json() } catch { return {} }
 }
 
 export default function Partidas() {
   const [loading, setLoading] = useState(true)
-  const [jogos, setJogos] = useState([]) // ✅ Simplificado para guardar direto a lista
+  const [data, setData] = useState({ jogos: [], menu: [], etapa: null })
   const [patrocinios, setPatrocinios] = useState([])
+  const [filtroId, setFiltroId] = useState('') // Controle do Seletor
   const [indexCarrossel, setIndexCarrossel] = useState(0)
 
-  async function loadData() {
-    if (jogos.length === 0) setLoading(true)
+  // Carrega os dados (aceita ID opcional)
+  async function loadData(id = '') {
+    setLoading(true)
     try {
-        // ✅ AGORA APONTANDO PARA A API CERTA (LISTA LEVE)
+        const targetId = id || filtroId
+        const url = targetId ? `/api/partidas?etapa_id=${targetId}` : '/api/partidas'
+
         const [res, resPatro] = await Promise.all([
-          fetch('/api/partidas', { cache: 'no-store' }), 
+          fetch(url, { cache: 'no-store' }), 
           fetch('/api/admin/patrocinios', { cache: 'no-store' })
         ])
         
-        // A API /api/partidas retorna um Array direto de jogos
-        const dadosJogos = await safeJson(res)
-        const dadosPatro = await resPatro.json().catch(() => [])
+        const json = await safeJson(res)
+        const patroData = await resPatro.json().catch(() => [])
         
-        // Garante que é um array
-        setJogos(Array.isArray(dadosJogos) ? dadosJogos : [])
-        setPatrocinios(Array.isArray(dadosPatro) ? dadosPatro : [])
+        setData({
+            jogos: Array.isArray(json.jogos) ? json.jogos : [],
+            menu: Array.isArray(json.menu) ? json.menu : [],
+            etapa: json.etapa || null
+        })
+        setPatrocinios(Array.isArray(patroData) ? patroData : [])
+
+        // Se carregou sem filtro, atualiza o filtro com o ID que veio da API
+        if (!targetId && json.etapa?.id) {
+            setFiltroId(json.etapa.id)
+        }
+
     } catch(e) {
         console.error("Erro ao carregar calendário:", e)
     } finally { 
@@ -37,12 +48,34 @@ export default function Partidas() {
     }
   }
 
+  // Carga inicial
   useEffect(() => {
     loadData()
-    // Atualiza a cada 1 minuto (Cache controla o peso no servidor)
-    const intervalo = setInterval(loadData, 60000)
-    return () => clearInterval(intervalo)
   }, [])
+
+  // Quando muda o seletor, recarrega
+  const handleChangeEtapa = (e) => {
+      const novoId = e.target.value
+      setFiltroId(novoId)
+      loadData(novoId)
+  }
+
+  // Refresh automático silencioso (só se não estiver carregando)
+  useEffect(() => {
+    const interval = setInterval(() => {
+        if (!loading) {
+            // Re-executa a busca sem setar loading true visualmente
+            const url = filtroId ? `/api/partidas?etapa_id=${filtroId}` : '/api/partidas'
+            fetch(url, { cache: 'no-store' })
+                .then(r => r.json())
+                .then(json => {
+                    setData(prev => ({ ...prev, jogos: json.jogos || [] }))
+                })
+                .catch(console.error)
+        }
+    }, 60000)
+    return () => clearInterval(interval)
+  }, [filtroId, loading])
 
   // Rotação do Carrossel
   useEffect(() => {
@@ -59,19 +92,18 @@ export default function Partidas() {
   const patrocinadoresCarrossel = useMemo(() => patrocinios.filter(p => p.cota === 'CARROSSEL'), [patrocinios])
   const patrocinadoresRodape = useMemo(() => patrocinios.filter(p => p.cota === 'RODAPE'), [patrocinios])
 
-  // Agrupamento por Rodada ou Tipo de Jogo
+  // Agrupamento
   const grupos = useMemo(() => {
-      if (!jogos || !Array.isArray(jogos)) return {}
-      return jogos.reduce((acc, j) => {
-          // Se for GRUPO, agrupa por Rodada. Se for MATA-MATA, agrupa pelo Tipo (Final, Semi, etc)
+      if (!data.jogos || !Array.isArray(data.jogos)) return {}
+      return data.jogos.reduce((acc, j) => {
           const key = j.tipo_jogo === 'GRUPO' ? `RODADA ${j.rodada}` : j.tipo_jogo
           if(!acc[key]) acc[key] = []
           acc[key].push(j)
           return acc
       }, {})
-  }, [jogos])
+  }, [data.jogos])
 
-  if (loading && jogos.length === 0) {
+  if (loading && !data.etapa) {
     return (
         <main className="min-h-screen bg-slate-50 flex items-center justify-center">
             <div className="flex flex-col items-center gap-3">
@@ -86,18 +118,35 @@ export default function Partidas() {
     <main className="min-h-screen bg-slate-50 py-10 px-4 md:px-10 font-sans text-slate-800">
       <div className="max-w-4xl mx-auto">
         
-        {/* HEADER */}
-        <div className="flex justify-between items-center mb-8">
-          <Link href="/" className="flex items-center gap-2 text-slate-500 hover:text-blue-600 font-bold text-sm uppercase transition-colors">
-            <ArrowLeft size={18} /> Início
-          </Link>
+        {/* HEADER COM SELETOR */}
+        <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
+          <div className="flex items-center gap-4 w-full md:w-auto">
+              <Link href="/" className="flex items-center gap-2 text-slate-500 hover:text-blue-600 font-bold text-sm uppercase transition-colors">
+                <ArrowLeft size={18} /> Início
+              </Link>
+              
+              {/* O SELETOR VOLTOU! */}
+              <div className="relative group">
+                  <select 
+                    value={filtroId} 
+                    onChange={handleChangeEtapa} 
+                    className="appearance-none bg-white border-2 border-slate-200 text-slate-900 font-black text-sm uppercase py-2 pl-4 pr-10 rounded-xl cursor-pointer hover:border-blue-500 outline-none shadow-sm min-w-[200px]"
+                  >
+                      {data.menu.map(item => (
+                        <option key={item.id} value={item.id}>{item.titulo} {item.status === 'EM_ANDAMENTO' ? '(Ao Vivo)' : ''}</option>
+                      ))}
+                  </select>
+                  <ChevronDown className="absolute right-3 top-2.5 text-slate-400 pointer-events-none" size={16}/>
+              </div>
+          </div>
+
           <div className="flex items-center gap-2 text-blue-600">
             <Calendar size={24} />
-            <h1 className="text-2xl font-black uppercase italic tracking-tighter text-slate-900">Calendário de Jogos</h1>
+            <h1 className="text-2xl font-black uppercase italic tracking-tighter text-slate-900">Calendário</h1>
           </div>
         </div>
 
-        {/* BANNER MASTER PREMIUM */}
+        {/* BANNER MASTER */}
         {patrocinadorMaster && (
           <div className="mb-10 rounded-[2rem] overflow-hidden shadow-2xl border-4 border-white bg-slate-900 relative group animate-in fade-in zoom-in duration-700">
             <a href={patrocinadorMaster.link_destino || '#'} target="_blank">
@@ -109,20 +158,19 @@ export default function Partidas() {
               ) : (
                 <img src={patrocinadorMaster.banner_url} className="w-full h-auto object-cover transition-transform duration-1000 group-hover:scale-105" alt="Master Sponsor" />
               )}
-              <div className="absolute bottom-4 left-6">
-                <span className="text-[9px] font-black text-white/40 uppercase tracking-widest">Patrocinador Master</span>
-              </div>
             </a>
           </div>
         )}
 
         {Object.keys(grupos).length === 0 ? (
-            <div className="text-center p-20 text-slate-400 font-bold bg-white rounded-3xl border border-dashed border-slate-300">Nenhum jogo agendado para esta competição.</div>
+            <div className="text-center p-20 text-slate-400 font-bold bg-white rounded-3xl border border-dashed border-slate-300">
+                Nenhum jogo agendado para "{data.etapa?.titulo}".
+            </div>
         ) : (
             <div className="space-y-12">
                 {Object.entries(grupos).map(([titulo, listaJogos], index) => (
                     <div key={titulo} className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-                        {/* CARROSSEL ESTRATÉGICO NO MEIO DA LISTA */}
+                        {/* CARROSSEL NO MEIO DA LISTA */}
                         {index === 1 && patrocinadoresCarrossel.length > 0 && (
                           <div className="mb-8 rounded-2xl overflow-hidden border border-slate-200 shadow-sm transition-all hover:shadow-md">
                             <a href={patrocinadoresCarrossel[indexCarrossel].link_destino || '#'} target="_blank" className="relative block h-20 md:h-24">
@@ -153,26 +201,23 @@ export default function Partidas() {
                                     {/* Placar */}
                                     <div className="flex-1 flex flex-col items-center w-full px-4">
                                         <div className="flex items-center justify-between w-full gap-2">
-                                            {/* Time A */}
                                             <span className="font-black text-slate-800 text-xs md:text-sm text-right flex-1 truncate uppercase tracking-tighter">
                                                 {j.equipeA?.nome_equipe || 'A definir'}
                                             </span>
                                             
-                                            {/* Score Box */}
                                             <div className="flex items-center justify-center gap-2 px-4 py-1.5 rounded-xl font-black text-lg md:text-xl min-w-[80px] bg-slate-50 border border-slate-200 shadow-inner">
                                                 <span className={j.gols_a > j.gols_b ? 'text-blue-600' : ''}>{j.gols_a ?? 0}</span>
                                                 <span className="text-slate-300 text-xs font-light">×</span>
                                                 <span className={j.gols_b > j.gols_a ? 'text-blue-600' : ''}>{j.gols_b ?? 0}</span>
                                             </div>
                                             
-                                            {/* Time B */}
                                             <span className="font-black text-slate-800 text-xs md:text-sm text-left flex-1 truncate uppercase tracking-tighter">
                                                 {j.equipeB?.nome_equipe || 'B definir'}
                                             </span>
                                         </div>
                                     </div>
 
-                                    {/* Botão Detalhes (LINK CORRIGIDO) */}
+                                    {/* Botão Detalhes */}
                                     <div className="w-full md:w-32 flex justify-center md:justify-end">
                                         <Link href={`/partidas/${j.id}`} className="text-[10px] font-black uppercase text-blue-600 border-2 border-blue-600 px-5 py-2 rounded-xl hover:bg-blue-600 hover:text-white transition-all shadow-sm">
                                             Detalhes
@@ -186,11 +231,11 @@ export default function Partidas() {
             </div>
         )}
 
-        {/* FOOTER RC ENTERPRISE */}
+        {/* FOOTER */}
         <footer className="mt-20 pt-10 border-t border-slate-200">
           {patrocinadoresRodape.length > 0 && (
             <div className="mb-12 text-center">
-              <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-[0.4em] mb-10">Apoio Institucional e Realização</h4>
+              <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-[0.4em] mb-10">Apoio Institucional</h4>
               <div className="flex flex-wrap justify-center items-center gap-12 opacity-60 grayscale hover:grayscale-0 transition-all duration-700">
                 {patrocinadoresRodape.map(p => (
                   <a key={p.id} href={p.link_destino || '#'} target="_blank"><img src={p.banner_url} alt={p.nome_empresa} className="h-8 md:h-12 w-auto object-contain hover:scale-110 transition-transform" /></a>
@@ -198,14 +243,12 @@ export default function Partidas() {
               </div>
             </div>
           )}
-
           <div className="pt-8 border-t border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
             <p className="text-[10px] text-slate-400 font-mono uppercase tracking-widest font-bold">© 2026 GESTÃO ESPORTIVA INTEGRADA</p>
             <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-slate-500">
               <span>Desenvolvido por</span>
               <a href="https://wa.me/5547997037512" target="_blank" className="text-blue-500 hover:text-blue-400 transition-colors flex items-center gap-1.5 group">
                 <span className="border-b border-blue-500/30 group-hover:border-blue-400 tracking-tighter">RC ENTERPRISE</span>
-                <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></div>
               </a>
             </div>
           </div>

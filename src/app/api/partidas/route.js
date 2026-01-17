@@ -1,8 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 
-// ❌ REMOVIDO 'force-dynamic' para permitir o Cache da Vercel
-
 function supabaseAnon() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -17,28 +15,32 @@ export async function GET(request) {
   const supabase = supabaseAnon()
 
   try {
-    // 1. DESCOBRE O ID DA ETAPA (Se não vier na URL, pega a ativa)
-    let etapaId = etapaIdParam
-    
-    if (!etapaId) {
-        const { data: active } = await supabase.from('etapas').select('id').eq('status', 'EM_ANDAMENTO').limit(1).single()
-        if (active) {
-            etapaId = active.id
-        } else {
-            const { data: last } = await supabase.from('etapas').select('id').order('created_at', { ascending: false }).limit(1).single()
-            etapaId = last?.id
-        }
+    // 1. BUSCA O MENU (Lista de todas as etapas para o dropdown)
+    const { data: menu } = await supabase
+        .from('etapas')
+        .select('id, titulo, status, modalidade')
+        .order('created_at', { ascending: false })
+
+    // 2. DEFINE QUAL ETAPA MOSTRAR
+    // Se veio ID na URL, usa ele. Se não, tenta achar a "EM_ANDAMENTO" ou a última criada.
+    let etapaId = etapaIdParam ? Number(etapaIdParam) : null
+    let etapaAtual = null
+
+    if (etapaId) {
+        etapaAtual = menu?.find(e => e.id === etapaId)
+    } else {
+        etapaAtual = menu?.find(e => e.status === 'EM_ANDAMENTO') || menu?.[0]
+        etapaId = etapaAtual?.id
     }
 
-    // Se não tiver etapa nenhuma, retorna lista vazia (com cache)
     if (!etapaId) {
-        return NextResponse.json([], { 
+        // Se não tem etapa nenhuma cadastrada
+        return NextResponse.json({ jogos: [], menu: [], etapa: null }, { 
             headers: { 'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=59' } 
         })
     }
 
-    // 2. BUSCA OS JOGOS
-    // Usamos select('*') para garantir que pega hora_jogo, horario, start_at (qualquer que seja o nome)
+    // 3. BUSCA OS JOGOS DA ETAPA SELECIONADA
     const { data: jogos, error } = await supabase
       .from('jogos')
       .select(`
@@ -48,16 +50,19 @@ export async function GET(request) {
       `)
       .eq('etapa_id', etapaId)
       .order('rodada', { ascending: true })
-      .order('data_jogo', { ascending: true }) // Ordena por data
-      .order('id', { ascending: true })
+      .order('data_jogo', { ascending: true })
+      .order('horario', { ascending: true }) // Ordena por hora para ficar organizado
 
     if (error) throw error
 
-    // 3. RETORNA O ARRAY DIRETO (Igual o Front espera) + CACHE
-    return NextResponse.json(jogos || [], {
+    // 4. RETORNA TUDO (Jogos + Menu + Etapa Atual)
+    return NextResponse.json({
+        jogos: jogos || [],
+        menu: menu || [],
+        etapa: etapaAtual
+    }, {
       status: 200,
       headers: {
-        // A MÁGICA: Cache de 30 segundos
         'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=59',
       },
     })
