@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Trophy, Info, Loader2, ChevronDown, Volume2, ShieldCheck, User } from 'lucide-react'
 
+// Função segura para evitar erros de JSON
 async function safeJson(res) {
   try { return await res.json() } catch { return {} }
 }
@@ -21,6 +22,7 @@ export default function Tabela() {
   const [patrocinios, setPatrocinios] = useState([])
   const [indexCarrossel, setIndexCarrossel] = useState(0)
 
+  // Carrega os dados da API (que agora tem Cache!)
   async function loadTabela(id = '', isBackground = false) {
     if (!isBackground) setLoading(true)
     try {
@@ -58,10 +60,12 @@ export default function Tabela() {
 
   useEffect(() => {
     loadTabela(filtroId)
+    // Atualiza silenciosamente a cada 30s
     const intervalo = setInterval(() => { loadTabela(filtroId, true) }, 30000)
     return () => clearInterval(intervalo)
   }, [filtroId])
 
+  // Rotação do Carrossel
   useEffect(() => {
     const carrosselItems = patrocinios.filter(p => p.cota === 'CARROSSEL')
     if (carrosselItems.length > 1) {
@@ -146,7 +150,7 @@ export default function Tabela() {
 
         <div className="grid lg:grid-cols-4 gap-8">
             <div className="lg:col-span-3 space-y-8">
-                {/* INFO ETAPA */}
+                {/* INFO ETAPA E CRITÉRIOS */}
                 <div className="bg-white border border-slate-200 rounded-2xl p-6 flex flex-col md:flex-row gap-6 items-center shadow-sm">
                     <div className="flex-1">
                         <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Torneio Oficial</p>
@@ -172,9 +176,11 @@ export default function Tabela() {
                       <div className="grid md:grid-cols-2 gap-6">
                           {data.finais.map(jogo => (
                               <div key={jogo.id} className="bg-white rounded-3xl p-6 border border-slate-200 shadow-lg flex justify-between items-center group hover:border-blue-500 transition-colors">
-                                  <span className="font-black text-sm w-1/3 text-right uppercase tracking-tighter">{jogo.equipeA?.nome_equipe}</span>
-                                  <span className="bg-slate-900 text-white px-3 py-1 rounded-lg font-black mx-4 shadow-md">{jogo.gols_a ?? 0}:{jogo.gols_b ?? 0}</span>
-                                  <span className="font-black text-sm w-1/3 text-left uppercase tracking-tighter">{jogo.equipeB?.nome_equipe}</span>
+                                  <span className="font-black text-sm w-1/3 text-right uppercase tracking-tighter truncate">{jogo.equipeA?.nome_equipe}</span>
+                                  <span className="bg-slate-900 text-white px-3 py-1 rounded-lg font-black mx-2 md:mx-4 shadow-md whitespace-nowrap">
+                                    {jogo.gols_a ?? 0} : {jogo.gols_b ?? 0}
+                                  </span>
+                                  <span className="font-black text-sm w-1/3 text-left uppercase tracking-tighter truncate">{jogo.equipeB?.nome_equipe}</span>
                               </div>
                           ))}
                       </div>
@@ -184,7 +190,7 @@ export default function Tabela() {
 
             {/* BARRA LATERAL */}
             <div className="lg:col-span-1 space-y-8">
-                {/* TOP ARTILHEIROS */}
+                {/* TOP ARTILHEIROS (Puxando da API) */}
                 <div className="bg-slate-900 text-white rounded-3xl p-6 shadow-xl border border-slate-800">
                     <h3 className="font-black uppercase tracking-widest text-sm mb-6 flex items-center gap-2 text-yellow-400 border-b border-white/10 pb-4"><Trophy size={16}/> Artilharia</h3>
                     <ul className="space-y-4">
@@ -197,10 +203,11 @@ export default function Tabela() {
                                 <span className="font-black text-lg text-yellow-400">{atleta.gols}</span>
                             </li>
                         ))}
+                        {data.artilharia?.length === 0 && <li className="text-xs text-slate-500 italic">Nenhum gol registrado.</li>}
                     </ul>
                 </div>
 
-                {/* MELHOR DEFESA */}
+                {/* MELHOR DEFESA (Puxando da API) */}
                 <div className="bg-white text-slate-900 rounded-3xl p-6 shadow-xl border border-slate-200 relative overflow-hidden">
                     <div className="absolute top-0 right-0 p-4 opacity-5"><ShieldCheck size={80}/></div>
                     <h3 className="font-black uppercase tracking-widest text-sm mb-6 flex items-center gap-2 text-blue-600 border-b border-slate-100 pb-4"><ShieldCheck size={16}/> Melhor Defesa</h3>
@@ -258,7 +265,7 @@ export default function Tabela() {
   )
 }
 
-// ✅ COMPONENTE TABELACARD CORRIGIDO (PADRÃO FIFA)
+// ✅ COMPONENTE TABELACARD CORRIGIDO COM COLUNA 'GP'
 function TabelaCard({ titulo, times, cor }) {
     return (
         <div className="bg-white rounded-3xl shadow-lg border border-slate-200 overflow-hidden flex flex-col h-full hover:shadow-xl transition-shadow duration-300">
@@ -272,7 +279,10 @@ function TabelaCard({ titulo, times, cor }) {
                             <th className="p-3 text-center text-slate-900" title="Pontos">PTS</th>
                             <th className="p-3 text-center text-slate-400" title="Jogos">J</th>
                             <th className="p-3 text-center text-slate-400 hidden sm:table-cell" title="Vitórias">V</th>
-                            {/* ✅ SALDO DE GOLS (SG) REINSERIDO AQUI */}
+                            
+                            {/* ADICIONADO GP (GOLS PRÓ) - Critério 3 */}
+                            <th className="p-3 text-center text-slate-500 hidden md:table-cell" title="Gols Pró">GP</th>
+                            
                             <th className="p-3 text-center text-slate-700 font-bold" title="Saldo de Gols">SG</th>
                             <th className="p-3 text-center text-red-500 bg-red-50/20 font-black" title="Gols Contra (Goleiro)">GC</th>
                             <th className="p-3 text-center text-yellow-600 bg-yellow-50/30" title="Cartões Amarelos">CA</th>
@@ -281,16 +291,19 @@ function TabelaCard({ titulo, times, cor }) {
                     </thead>
                     <tbody className="divide-y divide-slate-50">
                         {times.map((time, i) => {
-                            // ✅ CÁLCULO SG NA HORA
-                            const saldo = (time.gp || 0) - (time.gc || 0)
+                            // API já manda 'sg', mas mantemos fallback por segurança
+                            const saldo = time.sg !== undefined ? time.sg : (time.gp || 0) - (time.gc || 0)
                             return (
                                 <tr key={time.equipe_id || i} className="hover:bg-slate-50 transition-colors group">
-                                    <td className={`p-3 text-center font-black ${i < 2 ? 'text-green-600' : 'text-slate-300'}`}>{i + 1}</td>
+                                    <td className={`p-3 text-center font-black ${i < 4 ? 'text-green-600' : 'text-slate-300'}`}>{i + 1}</td>
                                     <td className="p-3 font-bold text-slate-700 uppercase tracking-tighter truncate max-w-[120px] group-hover:text-blue-600 transition-colors">{time.nome_equipe}</td>
                                     <td className="p-3 text-center font-black text-slate-900 text-base">{time.pts}</td>
                                     <td className="p-3 text-center text-slate-400 font-medium">{time.j}</td>
                                     <td className="p-3 text-center text-slate-400 font-medium hidden sm:table-cell">{time.v}</td>
-                                    {/* ✅ DADO SG */}
+                                    
+                                    {/* DADO GP */}
+                                    <td className="p-3 text-center text-slate-500 font-medium hidden md:table-cell">{time.gp || 0}</td>
+                                    
                                     <td className="p-3 text-center font-bold text-slate-600">{saldo}</td>
                                     <td className="p-3 text-center text-red-400 font-bold bg-red-50/10">{time.gc || 0}</td>
                                     <td className="p-3 text-center font-bold text-yellow-600 bg-yellow-50/10">{time.ca || 0}</td>
@@ -301,9 +314,9 @@ function TabelaCard({ titulo, times, cor }) {
                     </tbody>
                 </table>
             </div>
-            {/* ✅ LEGENDA COMPLETA */}
             <div className="p-3 bg-slate-50 border-t border-slate-100 flex flex-wrap justify-center gap-4 text-[8px] font-bold uppercase text-slate-400">
-                <span>SG: Saldo Gols</span>
+                <span>SG: Saldo</span>
+                <span>GP: Gols Pró</span>
                 <span>GC: Gols Contra</span>
                 <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-yellow-500"></span> CA: Amarelo</span>
                 <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-600"></span> CV: Vermelho</span>
