@@ -1,4 +1,6 @@
 import "./globals.css";
+// ✅ IMPORTA O RASTREADOR
+import UserTracker from '@/components/UserTracker'; 
 
 export const metadata = {
   title: "Taça Pérolas do Vale do Itajaí • A&F Sincroniza",
@@ -17,7 +19,12 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="pt-br">
-      <body>{children}</body>
+      <body>
+        {/* ✅ O ESPIÃO FICA AQUI, INVISÍVEL, MONITORANDO TUDO */}
+        <UserTracker /> 
+        
+        {children}
+      </body>
     </html>
   );
 }
