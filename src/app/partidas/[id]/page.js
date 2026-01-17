@@ -1,19 +1,21 @@
 'use client'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Loader2, ClipboardList, Shirt, RefreshCcw, Trophy, Volume2, Calendar, Clock } from 'lucide-react'
+import { ArrowLeft, Loader2, ClipboardList, Shirt, RefreshCcw, Trophy, Volume2, Calendar, Clock, MapPin } from 'lucide-react'
 
+// Função auxiliar segura (Igual da Tabela)
 async function safeJson(res) {
   try {
     return await res.json()
   } catch {
-    const txt = await res.text().catch(() => '')
-    return { error: txt || `Erro ${res.status}` }
+    return {} 
   }
 }
 
+// Garante que sempre teremos um array para evitar erro de .map
 function asArray(v) { return Array.isArray(v) ? v : [] }
 
+// Badge colorida para os eventos
 function badge(tipo) {
   const base = 'text-[10px] font-black uppercase px-3 py-1 rounded-full border shadow-sm'
   if (tipo === 'GOL') return `${base} bg-green-100 text-green-700 border-green-200`
@@ -22,24 +24,31 @@ function badge(tipo) {
   return `${base} bg-slate-100 text-slate-600 border-slate-200`
 }
 
-export default function Partida({ params }) {
+export default function PartidaDetalhe({ params }) {
   const jogoId = params?.id
 
-  const [data, setData] = useState(null)
-  const [patrocinios, setPatrocinios] = useState([])
   const [loading, setLoading] = useState(true)
+  const [data, setData] = useState({ 
+      jogo: null, 
+      eventos: [], 
+      atletasA: [], 
+      atletasB: [] 
+  })
+  const [patrocinios, setPatrocinios] = useState([])
   
-  // Ref para evitar atualização de estado se o componente desmontar
+  // Ref para evitar atualização de estado se o componente desmontar (sair da tela)
   const mountedRef = useRef(true)
   useEffect(() => {
     mountedRef.current = true
     return () => (mountedRef.current = false)
   }, [])
 
-  async function load(silent = false) {
+  // Função de Carga (Blindada igual a Tabela)
+  async function loadData(silent = false) {
     if (!silent) setLoading(true)
     try {
-      // ✅ BUSCA OTIMIZADA: Chama a API que agora tem Cache!
+      // ✅ Cache On-Demand: 'no-store' aqui força o navegador a perguntar pra Vercel
+      // A Vercel entrega o cache de 30s que configuramos na API.
       const [res, resPatro] = await Promise.all([
         fetch(`/api/partida?id=${jogoId}`, { cache: 'no-store' }), 
         fetch('/api/admin/patrocinios', { cache: 'no-store' })
@@ -50,66 +59,86 @@ export default function Partida({ params }) {
 
       if (!mountedRef.current) return
 
-      if (!res.ok) {
-        setData({ error: d?.error || 'Erro ao carregar partida' })
+      if (!res.ok || d.error) {
+        console.error("Erro API Partida:", d.error)
       } else {
-        setData(d)
+        setData({
+            jogo: d.jogo || null,
+            eventos: asArray(d.eventos),
+            atletasA: asArray(d.atletasA),
+            atletasB: asArray(d.atletasB)
+        })
       }
       setPatrocinios(asArray(p))
+
     } catch (e) {
-      console.error(e)
-      if (mountedRef.current) setData({ error: 'Falha de conexão com o servidor' })
+      console.error("Erro de conexão:", e)
     } finally {
       if (mountedRef.current && !silent) setLoading(false)
     }
   }
 
+  // Efeito de Carga Inicial + Auto Refresh
   useEffect(() => {
-    load(false)
-    // Atualiza a cada 15 segundos (O Cache segura a onda no servidor)
-    const t = setInterval(() => {
-      if (document.visibilityState === 'visible') load(true)
-    }, 15000) 
-    return () => clearInterval(t)
+    if (jogoId) {
+        loadData(false)
+        // Atualiza a cada 15 segundos (O Cache da API protege o banco)
+        const t = setInterval(() => {
+          if (document.visibilityState === 'visible') loadData(true)
+        }, 15000) 
+        return () => clearInterval(t)
+    }
   }, [jogoId])
 
-  const jogo = data?.jogo
-  const eventos = asArray(data?.eventos)
-  const atletasA = asArray(data?.atletasA)
-  const atletasB = asArray(data?.atletasB)
+  // Separação dos Patrocinadores
   const patrocinadorMaster = useMemo(() => patrocinios.find(p => p.cota === 'MASTER'), [patrocinios])
   const patrocinadoresRodape = useMemo(() => patrocinios.filter(p => p.cota === 'RODAPE'), [patrocinios])
 
+  // Dados simplificados para o Layout
+  const jogo = data.jogo
+  const eventos = data.eventos
   const nomeA = jogo?.equipeA?.nome_equipe || `Equipe A`
   const nomeB = jogo?.equipeB?.nome_equipe || `Equipe B`
+  const logoA = jogo?.equipeA?.logo_url
+  const logoB = jogo?.equipeB?.logo_url
 
-  if (loading && !data) {
+  if (loading && !jogo) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center gap-4">
         <Loader2 className="animate-spin text-blue-600" size={40} />
-        <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Acessando Súmula Eletrônica...</p>
+        <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Carregando Súmula...</p>
       </div>
     )
   }
 
+  if (!jogo && !loading) {
+      return (
+        <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-10 text-center">
+            <h1 className="text-2xl font-black text-slate-900 mb-2">Jogo não encontrado</h1>
+            <Link href="/partidas" className="text-blue-600 font-bold hover:underline">Voltar para o calendário</Link>
+        </div>
+      )
+  }
+
   return (
-    <main className="min-h-screen bg-slate-50 py-10 px-4 md:px-10">
+    <main className="min-h-screen bg-slate-50 py-10 px-4 md:px-10 font-sans text-slate-800">
       <div className="max-w-5xl mx-auto">
         
         {/* Header de Navegação */}
         <div className="flex justify-between items-center mb-8">
           <Link href="/partidas" className="flex items-center gap-2 text-slate-500 hover:text-blue-600 font-bold text-sm uppercase transition-colors">
-            <ArrowLeft size={18} /> Voltar ao Calendário
+            <ArrowLeft size={18} /> Voltar
           </Link>
 
-          <button onClick={() => load(false)} className="inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-widest px-4 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition-all shadow-sm">
-            <RefreshCcw size={14} className={loading ? "animate-spin" : ""} /> {loading ? "Sincronizando..." : "Atualizar"}
+          <button onClick={() => loadData(false)} className="inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-widest px-4 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition-all shadow-sm group">
+            <RefreshCcw size={14} className={`group-hover:rotate-180 transition-transform ${loading ? "animate-spin" : ""}`} /> 
+            {loading ? "Atualizando..." : "Atualizar Placar"}
           </button>
         </div>
 
         {/* BANNER MASTER */}
         {patrocinadorMaster && (
-          <div className="mb-10 rounded-3xl overflow-hidden shadow-xl border-4 border-white bg-slate-900 relative group aspect-[16/5] md:aspect-[21/6]">
+          <div className="mb-10 rounded-[2rem] overflow-hidden shadow-2xl border-4 border-white bg-slate-900 relative group aspect-[16/5] md:aspect-[21/6]">
             <a href={patrocinadorMaster.link_destino || '#'} target="_blank">
               {patrocinadorMaster.video_url ? (
                 <div className="w-full h-full relative">
@@ -123,106 +152,122 @@ export default function Partida({ params }) {
           </div>
         )}
 
-        <div className="bg-white rounded-[2rem] shadow-2xl overflow-hidden border border-slate-200 transition-all">
-          {data?.error ? (
-            <div className="p-20 text-center">
-              <p className="text-red-500 font-black uppercase tracking-widest mb-2">Ops! Ocorreu um erro</p>
-              <p className="text-slate-400 text-sm">{data.error}</p>
-            </div>
-          ) : (
-            <>
-              {/* Placar FIFA Style */}
-              <div className="bg-slate-900 text-white p-8 md:p-12 relative overflow-hidden">
+        <div className="bg-white rounded-[2.5rem] shadow-2xl overflow-hidden border border-slate-200 transition-all">
+            
+            {/* PLACAR ESTILO FIFA / TV */}
+            <div className="bg-slate-900 text-white p-6 md:p-12 relative overflow-hidden">
                 <div className="relative z-10">
-                  <div className="flex items-center gap-2 mb-6">
-                    <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${jogo?.status === 'EM_ANDAMENTO' ? 'bg-red-600 animate-pulse' : 'bg-slate-700 text-slate-300'}`}>
-                      {jogo?.status === 'EM_ANDAMENTO' ? '● Ao Vivo' : 'Partida Encerrada'}
+                  {/* Status do Jogo */}
+                  <div className="flex items-center justify-center mb-8">
+                    <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border border-white/10 ${jogo?.status === 'EM_ANDAMENTO' ? 'bg-red-600 text-white animate-pulse shadow-red-900/50 shadow-lg' : 'bg-slate-800 text-slate-400'}`}>
+                      {jogo?.status === 'EM_ANDAMENTO' ? '● AO VIVO AGORA' : (jogo?.finalizado ? 'FIM DE JOGO' : 'AGENDADO')}
                     </span>
-                    <span className="text-slate-500 font-bold text-[9px]">ID #{jogo?.id}</span>
                   </div>
 
-                  <div className="flex flex-col md:flex-row items-center justify-between gap-8">
-                    <div className="flex-1 text-center md:text-left">
-                      <h2 className="text-2xl md:text-4xl font-black uppercase italic tracking-tighter mb-2">{nomeA}</h2>
-                      <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Mandante</p>
+                  {/* Times e Placar */}
+                  <div className="flex flex-col md:flex-row items-center justify-between gap-8 md:gap-0">
+                    
+                    {/* Time A */}
+                    <div className="flex-1 flex flex-col items-center md:items-start text-center md:text-left">
+                        {logoA && <img src={logoA} className="h-16 w-16 md:h-20 md:w-20 object-contain mb-4 bg-white rounded-full p-2" alt="Logo A"/>}
+                        <h2 className="text-2xl md:text-4xl font-black uppercase italic tracking-tighter leading-none">{nomeA}</h2>
+                        <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mt-2">Mandante</p>
                     </div>
 
-                    <div className="flex flex-col items-center">
-                      <div className="text-6xl md:text-8xl font-black tracking-tighter flex items-center gap-4">
-                        <span>{jogo?.gols_a ?? 0}</span>
-                        <span className="text-slate-700 text-4xl md:text-5xl font-light">×</span>
-                        <span>{jogo?.gols_b ?? 0}</span>
+                    {/* Placar Central */}
+                    <div className="flex flex-col items-center px-8">
+                      <div className="bg-white/10 backdrop-blur-sm px-8 py-4 rounded-3xl border border-white/10 flex items-center gap-6 md:gap-10">
+                        <span className="text-6xl md:text-8xl font-black tracking-tighter">{jogo?.gols_a ?? 0}</span>
+                        <span className="text-slate-400 text-4xl md:text-5xl font-light opacity-50">×</span>
+                        <span className="text-6xl md:text-8xl font-black tracking-tighter">{jogo?.gols_b ?? 0}</span>
                       </div>
+                      
                       {jogo?.penaltis_a !== null && (
-                        <div className="mt-4 bg-white/5 border border-white/10 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest text-yellow-500">
+                        <div className="mt-4 bg-yellow-500/20 border border-yellow-500/50 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest text-yellow-400">
                           Pênaltis: {jogo.penaltis_a} - {jogo.penaltis_b}
                         </div>
                       )}
                     </div>
 
-                    <div className="flex-1 text-center md:text-right">
-                      <h2 className="text-2xl md:text-4xl font-black uppercase italic tracking-tighter mb-2">{nomeB}</h2>
-                      <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Visitante</p>
+                    {/* Time B */}
+                    <div className="flex-1 flex flex-col items-center md:items-end text-center md:text-right">
+                        {logoB && <img src={logoB} className="h-16 w-16 md:h-20 md:w-20 object-contain mb-4 bg-white rounded-full p-2" alt="Logo B"/>}
+                        <h2 className="text-2xl md:text-4xl font-black uppercase italic tracking-tighter leading-none">{nomeB}</h2>
+                        <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mt-2">Visitante</p>
                     </div>
                   </div>
                 </div>
-                <div className="absolute right-0 bottom-0 opacity-5 transform translate-x-1/4 translate-y-1/4"><Trophy size={300} /></div>
-              </div>
+                
+                {/* Background Decorativo */}
+                <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-slate-800 to-slate-900 -z-10"></div>
+                <div className="absolute right-0 bottom-0 opacity-5 transform translate-x-1/4 translate-y-1/4"><Trophy size={400} /></div>
+            </div>
 
-              {/* Informações de Campo */}
-              <div className="bg-slate-50 border-y border-slate-100 px-8 py-4 flex flex-wrap justify-center gap-8 text-[10px] font-black uppercase tracking-widest text-slate-400">
+            {/* Informações Técnicas */}
+            <div className="bg-slate-50 border-y border-slate-100 px-6 py-4 flex flex-wrap justify-center gap-6 md:gap-12 text-[10px] font-black uppercase tracking-widest text-slate-400">
                 <div className="flex items-center gap-2"><Calendar size={14} className="text-blue-600"/> {jogo?.data_jogo ? new Date(jogo.data_jogo + 'T00:00:00').toLocaleDateString('pt-BR') : '--/--'}</div>
                 <div className="flex items-center gap-2"><Clock size={14} className="text-blue-600"/> {jogo?.horario ? String(jogo.horario).slice(0,5) : '--:--'}</div>
                 <div className="flex items-center gap-2"><Trophy size={14} className="text-yellow-600"/> {jogo?.tipo_jogo?.replace(/_/g, ' ')} • Rodada {jogo?.rodada}</div>
-              </div>
+                {jogo?.local && <div className="flex items-center gap-2"><MapPin size={14} className="text-red-500"/> {jogo.local}</div>}
+            </div>
 
-              {/* Grid de Detalhes */}
-              <div className="p-6 md:p-10 grid lg:grid-cols-2 gap-10">
-                {/* LANCE A LANCE */}
-                <div>
+            {/* Grid de Conteúdo (Lances e Elenco) */}
+            <div className="p-6 md:p-10 grid lg:grid-cols-2 gap-10">
+                
+                {/* COLUNA 1: LANCE A LANCE */}
+                <div className="animate-in slide-in-from-left-4 duration-500">
                   <div className="flex items-center gap-3 mb-6 border-b border-slate-100 pb-4">
                     <div className="p-2 bg-blue-100 rounded-lg text-blue-600"><ClipboardList size={20} /></div>
-                    <h3 className="font-black uppercase text-slate-900 tracking-tight">Súmula de Eventos</h3>
+                    <h3 className="font-black uppercase text-slate-900 tracking-tight">Timeline da Partida</h3>
                   </div>
 
                   {eventos.length === 0 ? (
-                    <div className="py-10 text-center border-2 border-dashed border-slate-100 rounded-2xl">
-                      <p className="text-slate-300 font-bold text-xs uppercase italic">Aguardando lances da partida...</p>
+                    <div className="py-12 text-center border-2 border-dashed border-slate-100 rounded-2xl bg-slate-50/50">
+                      <ClipboardList className="mx-auto text-slate-300 mb-3" size={32}/>
+                      <p className="text-slate-400 font-bold text-xs uppercase tracking-widest">Nenhum evento registrado</p>
+                      <p className="text-slate-300 text-[10px] mt-1">Os gols e cartões aparecerão aqui em tempo real.</p>
                     </div>
                   ) : (
-                    <div className="space-y-3">
-                      {eventos.map((ev) => (
-                        <div key={ev.id} className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm hover:shadow-md transition-shadow">
-                          <div className="flex items-center justify-between mb-2">
-                            <span className={badge(ev.tipo)}>{ev.tipo}</span>
-                            {ev.minuto && <span className="text-[11px] font-black text-slate-900 bg-slate-100 px-2 py-1 rounded-md">{ev.minuto}'</span>}
+                    <div className="space-y-3 relative">
+                      {/* Linha do tempo visual */}
+                      <div className="absolute left-6 top-4 bottom-4 w-0.5 bg-slate-100 -z-10"></div>
+                      
+                      {eventos.map((ev, idx) => (
+                        <div key={ev.id || idx} className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex items-start gap-4 hover:shadow-md transition-shadow">
+                          <div className="flex flex-col items-center min-w-[3rem]">
+                              <span className="text-lg font-black text-slate-300">{ev.minuto || '-'}'</span>
                           </div>
-                          <p className="font-black text-slate-800 text-sm uppercase tracking-tighter">{ev.atleta_label || 'Atleta não identificado'}</p>
-                          <p className="text-[10px] font-bold text-slate-400 uppercase mt-1">{ev.team_name}</p>
-                          {ev.observacao && <p className="mt-2 text-[10px] italic text-slate-500 bg-slate-50 p-2 rounded-lg border border-slate-100">"{ev.observacao}"</p>}
+                          <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className={badge(ev.tipo)}>{ev.tipo}</span>
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">{ev.team_name}</span>
+                              </div>
+                              <p className="font-black text-slate-800 text-sm uppercase tracking-tighter">{ev.atleta_label}</p>
+                              {ev.observacao && <p className="mt-2 text-[11px] italic text-slate-500 bg-slate-50 p-2 rounded-lg border border-slate-100">"{ev.observacao}"</p>}
+                          </div>
                         </div>
                       ))}
                     </div>
                   )}
                 </div>
 
-                {/* ESCALAÇÕES */}
-                <div>
+                {/* COLUNA 2: ESCALAÇÕES */}
+                <div className="animate-in slide-in-from-right-4 duration-500 delay-100">
                   <div className="flex items-center gap-3 mb-6 border-b border-slate-100 pb-4">
                     <div className="p-2 bg-blue-100 rounded-lg text-blue-600"><Shirt size={20} /></div>
-                    <h3 className="font-black uppercase text-slate-900 tracking-tight">Elencos em Campo</h3>
+                    <h3 className="font-black uppercase text-slate-900 tracking-tight">Elencos Relacionados</h3>
                   </div>
 
                   <div className="grid gap-6">
                     {/* TIME A */}
                     <div className="bg-slate-50 rounded-2xl p-5 border border-slate-200">
-                      <p className="text-[10px] font-black uppercase text-blue-600 mb-3 tracking-widest">{nomeA}</p>
-                      <div className="space-y-1.5">
-                        {atletasA.length === 0 ? <p className="text-slate-300 text-[10px] font-bold">Sem escalação disponível.</p> : 
-                          atletasA.map(a => (
-                            <div key={a.id} className="flex items-center justify-between bg-white p-2 rounded-lg border border-slate-100 text-xs font-bold">
-                              <span className="text-slate-700 uppercase">{a.nome}</span>
-                              <span className="text-blue-600 font-black">#{a.numero_camisa ?? '-'}</span>
+                      <p className="text-[10px] font-black uppercase text-blue-600 mb-4 tracking-widest border-b border-slate-200 pb-2">{nomeA}</p>
+                      <div className="space-y-1.5 max-h-[300px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-200">
+                        {data.atletasA.length === 0 ? <p className="text-slate-400 text-[10px] font-bold italic text-center py-4">Sem escalação disponível.</p> : 
+                          data.atletasA.map(a => (
+                            <div key={a.id} className="flex items-center justify-between bg-white p-2.5 rounded-xl border border-slate-100 text-xs font-bold shadow-sm">
+                              <span className="text-slate-700 uppercase truncate pr-2">{a.nome}</span>
+                              <span className="text-blue-600 font-black bg-blue-50 px-2 py-0.5 rounded-md min-w-[24px] text-center">#{a.numero_camisa ?? '-'}</span>
                             </div>
                           ))
                         }
@@ -231,13 +276,13 @@ export default function Partida({ params }) {
 
                     {/* TIME B */}
                     <div className="bg-slate-50 rounded-2xl p-5 border border-slate-200">
-                      <p className="text-[10px] font-black uppercase text-blue-600 mb-3 tracking-widest">{nomeB}</p>
-                      <div className="space-y-1.5">
-                        {atletasB.length === 0 ? <p className="text-slate-300 text-[10px] font-bold">Sem escalação disponível.</p> : 
-                          atletasB.map(a => (
-                            <div key={a.id} className="flex items-center justify-between bg-white p-2 rounded-lg border border-slate-100 text-xs font-bold">
-                              <span className="text-slate-700 uppercase">{a.nome}</span>
-                              <span className="text-blue-600 font-black">#{a.numero_camisa ?? '-'}</span>
+                      <p className="text-[10px] font-black uppercase text-blue-600 mb-4 tracking-widest border-b border-slate-200 pb-2">{nomeB}</p>
+                      <div className="space-y-1.5 max-h-[300px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-200">
+                        {data.atletasB.length === 0 ? <p className="text-slate-400 text-[10px] font-bold italic text-center py-4">Sem escalação disponível.</p> : 
+                          data.atletasB.map(a => (
+                            <div key={a.id} className="flex items-center justify-between bg-white p-2.5 rounded-xl border border-slate-100 text-xs font-bold shadow-sm">
+                              <span className="text-slate-700 uppercase truncate pr-2">{a.nome}</span>
+                              <span className="text-blue-600 font-black bg-blue-50 px-2 py-0.5 rounded-md min-w-[24px] text-center">#{a.numero_camisa ?? '-'}</span>
                             </div>
                           ))
                         }
@@ -245,12 +290,10 @@ export default function Partida({ params }) {
                     </div>
                   </div>
                 </div>
-              </div>
-            </>
-          )}
+            </div>
         </div>
 
-        {/* FOOTER RC ENTERPRISE */}
+        {/* FOOTER */}
         <footer className="mt-20 pt-10 border-t border-slate-200">
           {patrocinadoresRodape.length > 0 && (
             <div className="mb-12 text-center">

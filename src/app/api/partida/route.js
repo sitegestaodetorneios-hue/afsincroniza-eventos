@@ -1,103 +1,92 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 
-// ❌ REMOVIDO 'force-dynamic' para permitir o Cache
-
 function supabaseAnon() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  if (!url || !key) throw new Error('Env ausente')
-  return createClient(url, key, { auth: { persistSession: false } })
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    { auth: { persistSession: false } }
+  )
 }
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const id = Number(searchParams.get('id') || 0)
 
-  // Se não tiver ID, retorna erro 400
-  if (!id) return NextResponse.json({ error: 'id obrigatório' }, { status: 400 })
+  if (!id) return NextResponse.json({ error: 'ID obrigatório' }, { status: 400 })
 
-  let supabase
+  const supabase = supabaseAnon()
+
   try {
-    supabase = supabaseAnon()
+    // 1. BUSCA O JOGO (Sem tentar adivinhar relacionamento complexo)
+    const { data: jogo, error } = await supabase
+      .from('jogos')
+      .select('*')
+      .eq('id', id)
+      .single()
+
+    if (error) throw error
+
+    // 2. BUSCA TUDO O RESTO EM PARALELO (Times, Eventos, Atletas)
+    // Fazemos manual para não falhar nunca
+    const [resTimeA, resTimeB, resEventos, resAtletas] = await Promise.all([
+      supabase.from('equipes').select('id, nome_equipe, logo_url').eq('id', jogo.equipe_a_id).single(),
+      supabase.from('equipes').select('id, nome_equipe, logo_url').eq('id', jogo.equipe_b_id).single(),
+      supabase.from('jogo_eventos').select('*').eq('jogo_id', id).order('created_at', { ascending: true }),
+      // Busca atletas dos dois times de uma vez só
+      supabase.from('atletas').select('id, nome, numero_camisa, equipe_id').in('equipe_id', [jogo.equipe_a_id, jogo.equipe_b_id])
+    ])
+
+    // 3. MONTA O OBJETO DO JOGO COM OS TIMES
+    const jogoCompleto = {
+        ...jogo,
+        equipeA: resTimeA.data || { nome_equipe: 'A Definir' },
+        equipeB: resTimeB.data || { nome_equipe: 'A Definir' }
+    }
+
+    // 4. PREPARA OS DADOS AUXILIARES
+    const eventos = resEventos.data || []
+    const todosAtletas = resAtletas.data || []
+    
+    // Separa os atletas por time
+    const atletasA = todosAtletas.filter(a => a.equipe_id === jogo.equipe_a_id).sort((a,b) => (a.numero_camisa || 99) - (b.numero_camisa || 99))
+    const atletasB = todosAtletas.filter(a => a.equipe_id === jogo.equipe_b_id).sort((a,b) => (a.numero_camisa || 99) - (b.numero_camisa || 99))
+
+    // 5. ENRIQUECE OS EVENTOS (Coloca nome do jogador e do time no evento)
+    // Cria mapa para acesso rápido
+    const atletaMap = new Map()
+    todosAtletas.forEach(a => atletaMap.set(a.id, a))
+
+    const eventosFormatados = eventos.map(ev => {
+        const isTimeA = ev.equipe_id === jogo.equipe_a_id
+        const teamName = isTimeA ? jogoCompleto.equipeA.nome_equipe : jogoCompleto.equipeB.nome_equipe
+        
+        const atleta = ev.atleta_id ? atletaMap.get(ev.atleta_id) : null
+        const camisa = ev.camisa_no_jogo ?? atleta?.numero_camisa ?? '-'
+        const atletaLabel = atleta ? `#${camisa} ${atleta.nome}` : `#${camisa} Jogador`
+
+        return {
+            ...ev,
+            team_name: teamName,
+            atleta_label: atletaLabel
+        }
+    })
+
+    // 6. RETORNA COM CACHE DE 30 SEGUNDOS
+    return NextResponse.json({
+        jogo: jogoCompleto,
+        eventos: eventosFormatados,
+        atletasA,
+        atletasB
+    }, {
+        status: 200,
+        headers: {
+            'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=59',
+        }
+    })
+
   } catch (e) {
+    console.error("ERRO API PARTIDA:", e.message)
     return NextResponse.json({ error: e.message }, { status: 500 })
   }
-
-  // 1. BUSCA O JOGO
-  // Usamos * para garantir que pega tudo, mas mantemos os relacionamentos específicos das equipes
-  const { data: jogo, error } = await supabase
-    .from('jogos')
-    .select(`
-      *,
-      equipeA:equipes!jogos_equipe_a_id_fkey(id, nome_equipe, logo_url),
-      equipeB:equipes!jogos_equipe_b_id_fkey(id, nome_equipe, logo_url)
-    `)
-    .eq('id', id)
-    .single()
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-
-  // 2. BUSCAS PARALELAS (Eventos + Atletas A + Atletas B)
-  // Fazemos tudo junto para ser mais rápido
-  const [resEventos, resAtletasA, resAtletasB] = await Promise.all([
-    supabase
-      .from('jogo_eventos')
-      .select('id, jogo_id, equipe_id, atleta_id, tipo, minuto, tempo, observacao, camisa_no_jogo, created_at')
-      .eq('jogo_id', id)
-      .order('created_at', { ascending: true }), // Ordem cronológica
-    
-    supabase
-      .from('atletas')
-      .select('id, nome, numero_camisa, equipe_id')
-      .eq('equipe_id', jogo.equipe_a_id)
-      .order('numero_camisa', { ascending: true, nullsFirst: true }),
-
-    supabase
-      .from('atletas')
-      .select('id, nome, numero_camisa, equipe_id')
-      .eq('equipe_id', jogo.equipe_b_id)
-      .order('numero_camisa', { ascending: true, nullsFirst: true })
-  ])
-
-  // Tratamento de erros das paralelas (se houver, usamos array vazio)
-  const eventos = resEventos.data || []
-  const atletasA = resAtletasA.data || []
-  const atletasB = resAtletasB.data || []
-
-  // 3. PROCESSAMENTO (Lógica de formatar nomes para o Frontend)
-  
-  // Mapa para busca rápida de atleta por ID
-  const atletaMap = new Map()
-  ;[...atletasA, ...atletasB].forEach((a) => atletaMap.set(a.id, a))
-
-  const nomeA = jogo?.equipeA?.nome_equipe || `Equipe ${jogo.equipe_a_id}`
-  const nomeB = jogo?.equipeB?.nome_equipe || `Equipe ${jogo.equipe_b_id}`
-
-  const evPlus = eventos.map((ev) => {
-    const teamName = ev.equipe_id === jogo.equipe_a_id ? nomeA : nomeB
-    const atleta = ev.atleta_id ? atletaMap.get(ev.atleta_id) : null
-    
-    // Prioridade: Camisa digitada no evento > Camisa do cadastro > Traço
-    const camisa = ev.camisa_no_jogo ?? atleta?.numero_camisa ?? '-'
-    
-    // Monta o label: "#10 NEYMAR" ou "#10 —"
-    const atletaLabel = atleta ? `#${camisa} ${atleta.nome}` : `#${camisa} —`
-    
-    return { ...ev, team_name: teamName, atleta_label: atletaLabel }
-  })
-
-  // 4. RETORNO COM CACHE 🛡️
-  return NextResponse.json({
-      jogo,
-      eventos: evPlus,
-      atletasA,
-      atletasB
-  }, {
-      status: 200,
-      headers: {
-          // Cache de 30 segundos (igual ao resto do site)
-          'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=59',
-      }
-  })
 }
