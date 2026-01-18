@@ -26,7 +26,7 @@ export default function Tabela() {
       
       const [res, resPatro] = await Promise.all([
         fetch(url, { cache: 'no-store' }), 
-        fetch('/api/admin/patrocinios', { cache: 'no-store' })
+        fetch('/api/admin/patrocinios', { cache: 'force-cache' })
       ])
 
       if (!res.ok) throw new Error('Falha na resposta da API')
