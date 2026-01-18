@@ -15,13 +15,13 @@ export async function GET(request) {
   const supabase = supabaseAnon()
 
   try {
-    // 1. BUSCA O MENU
+    // 1. BUSCA O MENU (Igual ao seu original)
     const { data: menu } = await supabase
         .from('etapas')
         .select('id, titulo, status, modalidade')
         .order('created_at', { ascending: false })
 
-    // 2. DEFINE ETAPA
+    // 2. DEFINE ETAPA (Igual ao seu original)
     let etapaId = etapaIdParam ? Number(etapaIdParam) : null
     let etapaAtual = null
 
@@ -36,10 +36,10 @@ export async function GET(request) {
         return NextResponse.json({ jogos: [], menu: [], etapa: null })
     }
 
-    // 3. BUSCA JOGOS
+    // 3. BUSCA JOGOS (Igual ao seu original)
     const { data: jogos, error: errJogos } = await supabase
       .from('jogos')
-      .select('*')
+      .select('*') 
       .eq('etapa_id', etapaId)
       .order('rodada', { ascending: true })
       .order('data_jogo', { ascending: true })
@@ -47,9 +47,8 @@ export async function GET(request) {
 
     if (errJogos) throw errJogos
 
-    // 4. BUSCA OS TIMES MANUALMENTE (Para garantir os nomes na tela)
+    // 4. CORREÇÃO DOS NOMES: Busca equipes para injetar os nomes nos cards
     let jogosCompletos = []
-    
     if (jogos && jogos.length > 0) {
         const idsTimes = [...new Set(jogos.flatMap(j => [j.equipe_a_id, j.equipe_b_id]))].filter(Boolean)
 
@@ -63,12 +62,13 @@ export async function GET(request) {
 
         jogosCompletos = jogos.map(j => ({
             ...j,
+            // Injeta o objeto que a página partidas/page.js espera ler
             equipeA: mapaTimes[j.equipe_a_id] || { nome_equipe: j.origem_a || 'A Definir' },
             equipeB: mapaTimes[j.equipe_b_id] || { nome_equipe: j.origem_b || 'A Definir' }
         }))
     }
 
-    // 5. RETORNA COM CACHE IGUAL AO-VIVO
+    // 5. RETORNA COM O CACHE ATIVADO (Igual ao seu ao-vivo)
     return NextResponse.json({
         jogos: jogosCompletos,
         menu: menu || [],

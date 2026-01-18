@@ -1,10 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 
-// ADICIONE ESTA LINHA NO TOPO PARA FORÇAR O NEXT A DEIXAR A VERCEL CONTROLAR O CACHE
-export const dynamic = 'force-dynamic' 
-
-// ... restante do código que mandei antes ...
+// Força o Next.js a tratar como dinâmica para a Vercel respeitar o Cache-Control manual
+export const dynamic = 'force-dynamic'
 
 function supabasePublic() {
   return createClient(
@@ -19,15 +17,12 @@ export async function GET(request) {
   const supabase = supabasePublic()
 
   try {
-    // 1. CARREGAR ETAPAS (MENU)
     const { data: etapas } = await supabase
       .from('etapas')
       .select('id, titulo, status, modalidade, regras')
       .order('created_at', { ascending: false })
 
-    const etapaAtiva = etapa_id 
-      ? etapas.find(e => e.id == etapa_id) 
-      : etapas[0]
+    const etapaAtiva = etapa_id ? etapas.find(e => e.id == etapa_id) : etapas[0]
 
     if (!etapaAtiva) {
         return NextResponse.json({ menu: etapas, etapa: null }, {
@@ -38,22 +33,19 @@ export async function GET(request) {
 
     const id = etapaAtiva.id
 
-    // 2. BUSCAR DADOS BRUTOS
     const [timesRes, jogosRes, cartoesRes, artilhariaRes] = await Promise.all([
         supabase.from('etapa_equipes').select('equipe_id, grupo, equipes(nome_equipe)').eq('etapa_id', id),
         supabase.from('jogos').select('*').eq('etapa_id', id).order('id', { ascending: true }),
         supabase.from('jogo_eventos').select('*').in('tipo', ['AMARELO', 'VERMELHO']), 
-        supabase.from('jogo_eventos').select('atleta_id, tipo, equipes(nome_equipe), atletas(nome), jogo_id').eq('tipo', 'GOL')
+        supabase.from('jogo_eventos').select('atleta_id, tipo, equipes(nome_equipe), atletas(nome)').eq('tipo', 'GOL')
     ])
 
     const timesData = timesRes.data || []
     const jogosData = jogosRes.data || []
     const jogosIds = jogosData.map(j => j.id)
-    
     const cartoesData = (cartoesRes.data || []).filter(c => jogosIds.includes(c.jogo_id))
     const golsData = (artilhariaRes.data || []).filter(g => jogosIds.includes(g.jogo_id))
 
-    // 3. CÁLCULO DE CLASSIFICAÇÃO
     const stats = {} 
     timesData.forEach(t => {
         let grp = (t.grupo || 'U').trim().toUpperCase().replace('GRUPO', '').trim()
@@ -90,7 +82,7 @@ export async function GET(request) {
 
     let classificacao = Object.values(stats)
     const regrasSalvas = etapaAtiva.regras?.criterios 
-    const criterios = (regrasSalvas && regrasSalvas.length > 0) ? regrasSalvas : ['PONTOS', 'VITORIAS', 'SALDO', 'GOLS_PRO', 'VERMELHOS', 'AMARELOS']
+    const criterios = regrasSalvas && regrasSalvas.length > 0 ? regrasSalvas : ['PONTOS', 'VITORIAS', 'SALDO', 'GOLS_PRO', 'VERMELHOS', 'AMARELOS']
 
     classificacao.sort((a, b) => {
         if (a.grupo < b.grupo) return -1
@@ -107,7 +99,6 @@ export async function GET(request) {
         return 0
     })
 
-    // 4. ARTILHARIA
     const artilhariaMap = {}
     golsData.forEach(g => {
         if(g.atleta_id) {
@@ -123,13 +114,8 @@ export async function GET(request) {
     })
     const artilharia = Object.values(artilhariaMap).sort((a, b) => b.gols - a.gols).slice(0, 10)
 
-    // 5. DEFESA
-    const defesa = classificacao
-        .filter(t => t.j > 0)
-        .sort((a, b) => (a.gc / a.j) - (b.gc / b.j))
-        .slice(0, 5)
+    const defesa = classificacao.filter(t => t.j > 0).sort((a, b) => (a.gc / a.j) - (b.gc / b.j)).slice(0, 5)
 
-    // 6. FINAIS
     const finais = jogosData
         .filter(j => j.tipo_jogo !== 'GRUPO')
         .map(j => {
@@ -138,15 +124,8 @@ export async function GET(request) {
             return { ...j, equipeA: { nome_equipe: timeA }, equipeB: { nome_equipe: timeB } }
         })
 
-    // ✅ RESPOSTA FINAL COM CACHE
     return NextResponse.json({
-      menu: etapas,
-      etapa: etapaAtiva,
-      classificacao,
-      finais,
-      artilharia,
-      defesa,
-      now: new Date().toISOString()
+      menu: etapas, etapa: etapaAtiva, classificacao, finais, artilharia, defesa, now: new Date().toISOString()
     }, {
         status: 200,
         headers: {
