@@ -179,12 +179,39 @@ export default function AdminPanel() {
             <button onClick={() => setAbaAtiva('dashboard')} className={`w-full text-left p-4 rounded-xl font-bold uppercase text-xs tracking-wider flex items-center gap-3 transition-all ${abaAtiva === 'dashboard' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}><Users size={18} /> Auditoria / Equipes</button>
             <button onClick={() => setAbaAtiva('config')} className={`w-full text-left p-4 rounded-xl font-bold uppercase text-xs tracking-wider flex items-center gap-3 transition-all ${abaAtiva === 'config' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}><Settings size={18} /> Editor Completo</button>
             
-            <div className="pt-4 pb-2 text-[10px] font-black uppercase text-slate-600 tracking-widest pl-2">Campeonato</div>
-            
-            <Link href="/admin/jogos-novo" className="w-full text-left p-4 rounded-xl font-bold uppercase text-xs tracking-wider flex items-center gap-3 transition-all text-slate-400 hover:bg-slate-800 hover:text-white"><ClipboardList size={18} /> Gestão de Jogos</Link>
-            
-            {/* ✅ NOVO LINK PARA MODELOS */}
-            <Link href="/admin/modelos" className="w-full text-left p-4 rounded-xl font-bold uppercase text-xs tracking-wider flex items-center gap-3 transition-all text-slate-400 hover:bg-slate-800 hover:text-white"><Swords size={18} /> Modelos & Regras</Link>
+<div className="pt-4 pb-2 text-[10px] font-black uppercase text-slate-600 tracking-widest pl-2">Campeonato</div>
+
+{/* ✅ NOVA: Página de Etapas/Jogos (criar etapa, gerar tabela, etc) */}
+<Link
+  href="/admin/jogos"
+  className="w-full text-left p-4 rounded-xl font-bold uppercase text-xs tracking-wider flex items-center gap-3 transition-all text-slate-400 hover:bg-slate-800 hover:text-white"
+>
+  <PlusCircle size={18} /> Etapas & Geração
+</Link>
+
+{/* ✅ Gestão completa (cards, editar, súmula, etc) */}
+<Link
+  href="/admin/jogos-novo"
+  className="w-full text-left p-4 rounded-xl font-bold uppercase text-xs tracking-wider flex items-center gap-3 transition-all text-slate-400 hover:bg-slate-800 hover:text-white"
+>
+  <ClipboardList size={18} /> Jogos (Gestão)
+</Link>
+
+{/* ✅ Ao vivo (somente EM_ANDAMENTO) */}
+<Link
+  href="/ao-vivo"
+  className="w-full text-left p-4 rounded-xl font-bold uppercase text-xs tracking-wider flex items-center gap-3 transition-all text-slate-400 hover:bg-slate-800 hover:text-white"
+>
+  <Calendar size={18} /> Tela Ao Vivo
+</Link>
+
+{/* ✅ Modelos */}
+<Link
+  href="/admin/modelos"
+  className="w-full text-left p-4 rounded-xl font-bold uppercase text-xs tracking-wider flex items-center gap-3 transition-all text-slate-400 hover:bg-slate-800 hover:text-white"
+>
+  <Swords size={18} /> Modelos & Regras
+</Link>
           </nav>
         </div>
         <button onClick={sair} className="mt-8 w-full text-left p-4 rounded-xl font-bold uppercase text-xs flex gap-3 hover:bg-red-900/20 text-red-400 hover:text-red-300 transition-colors"><LogOut size={18} /> Encerrar Sessão</button>
