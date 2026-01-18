@@ -1,6 +1,11 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 
+// ADICIONE ESTA LINHA NO TOPO PARA FORÇAR O NEXT A DEIXAR A VERCEL CONTROLAR O CACHE
+export const dynamic = 'force-dynamic' 
+
+// ... restante do código que mandei antes ...
+
 function supabasePublic() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
