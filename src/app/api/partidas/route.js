@@ -1,87 +1,148 @@
 import { createClient } from '@supabase/supabase-js'
-import { NextResponse } from 'next/server'
 
-function supabaseAnon() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    { auth: { persistSession: false } }
-  )
+export const dynamic = 'force-static'
+export const revalidate = 30
+
+function supabasePublic() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  if (!url || !key) throw new Error('Env ausente: NEXT_PUBLIC_SUPABASE_URL ou NEXT_PUBLIC_SUPABASE_ANON_KEY')
+  return createClient(url, key, { auth: { persistSession: false } })
+}
+
+function traduzirOrigem(texto) {
+  if (!texto) return 'A definir'
+  const t = String(texto)
+
+  if (t.includes('RANKING|')) {
+    try {
+      const raw = t.split('|')[1]
+      const [grp, pos] = raw.split(':')
+      return `${Number(pos) + 1}º Grupo ${String(grp).trim().toUpperCase()}`
+    } catch {
+      return 'A definir'
+    }
+  }
+
+  if (t.includes('JOGO_VENC|')) {
+    try {
+      const idx = Number(t.split(':')[1])
+      return `Venc. Jogo ${idx + 1}`
+    } catch {
+      return 'A definir'
+    }
+  }
+
+  return t
 }
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const etapaIdParam = searchParams.get('etapa_id')
-  const supabase = supabaseAnon()
+
+  let supabase
+  try {
+    supabase = supabasePublic()
+  } catch (e) {
+    return new Response(JSON.stringify({ error: e.message }), { status: 500 })
+  }
 
   try {
-    // 1. BUSCA O MENU (Igual ao seu original)
-    const { data: menu } = await supabase
-        .from('etapas')
-        .select('id, titulo, status, modalidade')
-        .order('created_at', { ascending: false })
+    const { data: menu, error: errMenu } = await supabase
+      .from('etapas')
+      .select('*')
+      .order('created_at', { ascending: false })
 
-    // 2. DEFINE ETAPA (Igual ao seu original)
-    let etapaId = etapaIdParam ? Number(etapaIdParam) : null
-    let etapaAtual = null
+    if (errMenu) {
+      return new Response(JSON.stringify({ error: errMenu.message }), { status: 500 })
+    }
 
-    if (etapaId) {
-        etapaAtual = menu?.find(e => e.id === etapaId)
+    const etapas = menu || []
+
+    let etapaAtiva = null
+    if (etapaIdParam) {
+      etapaAtiva = etapas.find((e) => String(e.id) === String(etapaIdParam)) || null
     } else {
-        etapaAtual = menu?.find(e => e.status === 'EM_ANDAMENTO') || menu?.[0]
-        etapaId = etapaAtual?.id
+      etapaAtiva =
+        etapas.find((e) => String(e.status).toUpperCase() === 'EM_ANDAMENTO') ||
+        etapas[0] ||
+        null
     }
 
-    if (!etapaId) {
-        return NextResponse.json({ jogos: [], menu: [], etapa: null })
+    if (!etapaAtiva) {
+      return new Response(JSON.stringify({ menu: etapas, etapa: null, jogos: [] }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=59',
+          'Vary': 'Accept-Encoding',
+        },
+      })
     }
 
-    // 3. BUSCA JOGOS (Igual ao seu original)
-    const { data: jogos, error: errJogos } = await supabase
+    const etapa_id = etapaAtiva.id
+
+    const { data: jogosData, error: errJogos } = await supabase
       .from('jogos')
-      .select('*') 
-      .eq('etapa_id', etapaId)
+      .select('*')
+      .eq('etapa_id', etapa_id)
       .order('rodada', { ascending: true })
-      .order('data_jogo', { ascending: true })
-      .order('horario', { ascending: true })
+      .order('horario', { ascending: true, nullsFirst: true })
+      .order('id', { ascending: true })
 
-    if (errJogos) throw errJogos
-
-    // 4. CORREÇÃO DOS NOMES: Busca equipes para injetar os nomes nos cards
-    let jogosCompletos = []
-    if (jogos && jogos.length > 0) {
-        const idsTimes = [...new Set(jogos.flatMap(j => [j.equipe_a_id, j.equipe_b_id]))].filter(Boolean)
-
-        const { data: times } = await supabase
-            .from('equipes')
-            .select('id, nome_equipe, logo_url')
-            .in('id', idsTimes)
-
-        const mapaTimes = {}
-        times?.forEach(t => mapaTimes[t.id] = t)
-
-        jogosCompletos = jogos.map(j => ({
-            ...j,
-            // Injeta o objeto que a página partidas/page.js espera ler
-            equipeA: mapaTimes[j.equipe_a_id] || { nome_equipe: j.origem_a || 'A Definir' },
-            equipeB: mapaTimes[j.equipe_b_id] || { nome_equipe: j.origem_b || 'A Definir' }
-        }))
+    if (errJogos) {
+      return new Response(JSON.stringify({ error: errJogos.message }), { status: 500 })
     }
 
-    // 5. RETORNA COM O CACHE ATIVADO (Igual ao seu ao-vivo)
-    return NextResponse.json({
-        jogos: jogosCompletos,
-        menu: menu || [],
-        etapa: etapaAtual
-    }, {
-      status: 200,
-      headers: {
-        'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=59',
-      },
+    const listaJogos = jogosData || []
+
+    // ✅ sem logo_url por enquanto
+    const { data: equipes, error: errEq } = await supabase
+      .from('equipes')
+      .select('id, nome_equipe')
+
+    if (errEq) {
+      return new Response(JSON.stringify({ error: errEq.message }), { status: 500 })
+    }
+
+    const mapaEquipes = {}
+    ;(equipes || []).forEach((eq) => {
+      mapaEquipes[String(eq.id)] = eq
     })
 
+    const jogosCompletos = listaJogos.map((j) => {
+      const timeA = mapaEquipes[String(j.equipe_a_id)]
+      const timeB = mapaEquipes[String(j.equipe_b_id)]
+
+      return {
+        ...j,
+        equipeA: {
+          nome_equipe: timeA ? timeA.nome_equipe : traduzirOrigem(j.origem_a),
+          logo_url: null,
+        },
+        equipeB: {
+          nome_equipe: timeB ? timeB.nome_equipe : traduzirOrigem(j.origem_b),
+          logo_url: null,
+        },
+      }
+    })
+
+    const corpo = {
+      menu: etapas,
+      etapa: etapaAtiva,
+      jogos: jogosCompletos,
+      now: new Date().toISOString(),
+    }
+
+    return new Response(JSON.stringify(corpo), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=59',
+        'Vary': 'Accept-Encoding',
+      },
+    })
   } catch (e) {
-    console.error("ERRO API PARTIDAS:", e.message)
-    return NextResponse.json({ error: e.message }, { status: 500 })
+    return new Response(JSON.stringify({ error: e.message || 'Erro interno' }), { status: 500 })
   }
 }

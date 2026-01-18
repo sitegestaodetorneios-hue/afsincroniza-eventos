@@ -164,7 +164,9 @@ export default function Partidas() {
                                 <div key={j.id} className={`bg-white p-5 rounded-2xl border transition-all shadow-sm flex flex-col md:flex-row items-center justify-between gap-4 border-slate-200 ${j.status === 'EM_ANDAMENTO' ? 'ring-2 ring-red-500 shadow-red-100' : 'hover:border-blue-300 hover:shadow-md'}`}>
                                     <div className="flex md:flex-col items-center md:items-start gap-3 md:gap-1 w-full md:w-32 text-slate-400">
                                         <div className="text-[11px] font-black uppercase tracking-tighter flex items-center gap-1">
-                                            <Calendar size={12}/> {j.data_jogo ? new Date(j.data_jogo + 'T00:00:00').toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit'}) : '--/--'}
+                                            <Calendar size={12}/> 
+                                            {/* ✅ CORREÇÃO: Tratamento de data sem fuso horário */}
+                                            {j.data_jogo ? j.data_jogo.split('-').reverse().slice(0,2).join('/') : '--/--'}
                                         </div>
                                         <div className="text-[11px] font-black text-blue-600 uppercase tracking-tighter flex items-center gap-1">
                                             <Clock size={12}/> {j.horario ? String(j.horario).slice(0,5) : '--:--'}
@@ -174,7 +176,8 @@ export default function Partidas() {
                                     <div className="flex-1 flex flex-col items-center w-full px-4">
                                         <div className="flex items-center justify-between w-full gap-2">
                                             <span className="font-black text-slate-800 text-xs md:text-sm text-right flex-1 truncate uppercase tracking-tighter">
-                                                {j.equipeA?.nome_equipe || 'A definir'}
+                                                {/* ✅ CORREÇÃO: Fallback para origem_a no mata-mata */}
+                                                {j.equipeA?.nome_equipe || j.origem_a || 'A definir'}
                                             </span>
                                             
                                             <div className="flex items-center justify-center gap-2 px-4 py-1.5 rounded-xl font-black text-lg md:text-xl min-w-[80px] bg-slate-50 border border-slate-200 shadow-inner">
@@ -184,13 +187,13 @@ export default function Partidas() {
                                             </div>
                                             
                                             <span className="font-black text-slate-800 text-xs md:text-sm text-left flex-1 truncate uppercase tracking-tighter">
-                                                {j.equipeB?.nome_equipe || 'B definir'}
+                                                {/* ✅ CORREÇÃO: Fallback para origem_b no mata-mata */}
+                                                {j.equipeB?.nome_equipe || j.origem_b || 'B definir'}
                                             </span>
                                         </div>
                                     </div>
 
                                     <div className="w-full md:w-32 flex justify-center md:justify-end">
-                                        {/* ⬇️ AQUI ESTÁ A CORREÇÃO CRÍTICA (USO DE CRASE) */}
                                         <Link href={`/partidas/${j.id}`} className="text-[10px] font-black uppercase text-blue-600 border-2 border-blue-600 px-5 py-2 rounded-xl hover:bg-blue-600 hover:text-white transition-all shadow-sm">
                                             Detalhes
                                         </Link>

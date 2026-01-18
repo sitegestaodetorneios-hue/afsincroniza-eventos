@@ -531,7 +531,16 @@ function GameCard({ jogo, onUpdate, pin, allTeams }) {
             </div>
             
             <div className="pt-3 border-t border-slate-100 flex justify-between items-center">
-                <div className="text-[10px] text-slate-400 flex flex-col"><span className="font-bold flex items-center gap-1"><Calendar size={10}/> {jogo.data_jogo ? new Date(jogo.data_jogo).toLocaleDateString('pt-BR').slice(0,5) : '--/--'}</span><span className="flex items-center gap-1"><Clock size={10}/> {jogo.horario ? String(jogo.horario).slice(0,5) : '--:--'} {jogo.arbitro && `• ${jogo.arbitro}`}</span></div>
+<div className="text-[10px] text-slate-400 flex flex-col">
+  <span className="font-bold flex items-center gap-1">
+    <Calendar size={10}/> 
+    {jogo.data_jogo ? jogo.data_jogo.split('-').reverse().slice(0,2).join('/') : '--/--'}
+  </span>
+  <span className="flex items-center gap-1">
+    <Clock size={10}/> 
+    {jogo.horario ? String(jogo.horario).slice(0,5) : '--:--'} {jogo.arbitro && `• ${jogo.arbitro}`}
+  </span>
+</div>
                 <div className="flex gap-2">
                     <button onClick={() => setShowPenalties(!showPenalties)} className={`p-1.5 rounded transition-colors ${showPenalties ? 'bg-yellow-100 text-yellow-700' : 'bg-slate-100 text-slate-600 hover:text-yellow-600'}`} title="Pênaltis"><Target size={14}/></button>
                     <button onClick={toggleSumula} className={`p-1.5 rounded transition-colors ${openSumula ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-600 hover:text-blue-600'}`} title="Súmula"><ClipboardList size={14}/></button>
