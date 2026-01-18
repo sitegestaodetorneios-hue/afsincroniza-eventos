@@ -1,149 +1,176 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 
-// REMOVIDO 'force-dynamic' para permitir o Cache da Vercel funcionar
+// ⚠️ SEM 'export const revalidate' ou 'force-dynamic' 
+// Deixamos o controle total para o Header da resposta, igual à sua API ao-vivo.
 
-function supabaseAnon() {
+function supabasePublic() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    { auth: { persistSession: false } }
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   )
 }
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
-  const etapaIdParam = searchParams.get('etapa_id')
-  const supabase = supabaseAnon()
+  const etapa_id = searchParams.get('etapa_id')
+
+  const supabase = supabasePublic()
 
   try {
-    let etapa = null
+    // 1. CARREGAR ETAPAS (MENU)
+    const { data: etapas } = await supabase
+      .from('etapas')
+      .select('id, titulo, status, modalidade, regras')
+      .order('created_at', { ascending: false })
 
-    // 1. IDENTIFICAÇÃO DA ETAPA
-    if (etapaIdParam) {
-      const { data } = await supabase.from('etapas').select('*').eq('id', etapaIdParam).single()
-      etapa = data
-    } else {
-      let { data: active } = await supabase.from('etapas').select('*').eq('status', 'EM_ANDAMENTO').limit(1)
-      etapa = active?.[0] || (await supabase.from('etapas').select('*').order('created_at', { ascending: false }).limit(1)).data?.[0]
-    }
+    const etapaAtiva = etapa_id 
+      ? etapas.find(e => e.id == etapa_id) 
+      : etapas[0]
 
-    if (!etapa) {
-        return NextResponse.json({ etapa: null, classificacao: [], finais: [], menu: [], artilharia: [], defesa: [] }, {
+    // Se não tiver etapa, retorna vazio mas com o mesmo cache para proteger
+    if (!etapaAtiva) {
+        return NextResponse.json({ menu: etapas, etapa: null }, {
+            status: 200,
             headers: { 'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=59' }
         })
     }
 
-    // 2. BUSCA DADOS DA VIEW
-    const { data: dadosView } = await supabase.from('vw_tabela_oficial').select('*').eq('etapa_id', etapa.id)
+    const id = etapaAtiva.id
+
+    // 2. BUSCAR DADOS BRUTOS (PARALELO)
+    const [timesRes, jogosRes, cartoesRes, artilhariaRes] = await Promise.all([
+        supabase.from('etapa_equipes').select('equipe_id, grupo, equipes(nome_equipe)').eq('etapa_id', id),
+        supabase.from('jogos').select('*').eq('etapa_id', id).order('id', { ascending: true }),
+        supabase.from('jogo_eventos').select('*').in('tipo', ['AMARELO', 'VERMELHO']), 
+        supabase.from('jogo_eventos').select('atleta_id, tipo, equipes(nome_equipe), atletas(nome)').eq('tipo', 'GOL')
+    ])
+
+    const timesData = timesRes.data || []
+    const jogosData = jogosRes.data || []
+    const jogosIds = jogosData.map(j => j.id)
     
-    // 3. BUSCA EVENTOS (OTIMIZADO)
-    const { data: jogos } = await supabase.from('jogos').select('id').eq('etapa_id', etapa.id)
-    const jogoIds = jogos?.map(j => j.id) || []
+    const cartoesData = (cartoesRes.data || []).filter(c => jogosIds.includes(c.jogo_id))
+    const golsData = (artilhariaRes.data || []).filter(g => jogosIds.includes(g.jogo_id))
 
-    let eventos = []
-    if (jogoIds.length > 0) {
-        const { data: evs } = await supabase
-            .from('jogo_eventos')
-            .select(`id, tipo, equipe_id, atleta_id`)
-            .in('jogo_id', jogoIds)
-        eventos = evs || []
-    }
-
-    // 4. PROCESSAMENTO
-    const statsTime = {} 
-    const golsPorAtletaId = {}
-
-    eventos.forEach(ev => {
-        if (!statsTime[ev.equipe_id]) statsTime[ev.equipe_id] = { am: 0, verm: 0 }
-        if (ev.tipo === 'AMARELO') statsTime[ev.equipe_id].am++
-        if (ev.tipo === 'VERMELHO') statsTime[ev.equipe_id].verm++
-
-        if (ev.tipo === 'GOL' && ev.atleta_id) {
-            golsPorAtletaId[ev.atleta_id] = (golsPorAtletaId[ev.atleta_id] || 0) + 1
+    // =================================================================================
+    // 3. CÁLCULO DE CLASSIFICAÇÃO (LÓGICA AGRESSIVA IGUAL ADMIN)
+    // =================================================================================
+    const stats = {} 
+    
+    // Inicializa Times
+    timesData.forEach(t => {
+        let grp = (t.grupo || 'U').trim().toUpperCase().replace('GRUPO', '').trim()
+        if(grp === '') grp = 'U'
+        
+        stats[t.equipe_id] = { 
+            equipe_id: t.equipe_id, 
+            nome_equipe: t.equipes?.nome_equipe || 'Time', 
+            grupo: grp, 
+            pts: 0, v: 0, e: 0, d: 0, j: 0, 
+            sg: 0, gp: 0, gc: 0, 
+            ca: 0, cv: 0 
         }
     })
 
-    // 5. ARTILHARIA
-    const idsArtilheiros = Object.keys(golsPorAtletaId)
-    let artilhariaFinal = []
-    if (idsArtilheiros.length > 0) {
-        const { data: atletas } = await supabase.from('atletas').select('id, nome, equipe_id').in('id', idsArtilheiros)
-        
-        // Otimização: Pegar apenas equipes necessárias
-        const equipeIds = [...new Set(atletas?.map(a => a.equipe_id) || [])]
-        const { data: equipesArt } = await supabase.from('equipes').select('id, nome_equipe').in('id', equipeIds)
-        const equipeMap = {}
-        equipesArt?.forEach(eq => equipeMap[eq.id] = eq.nome_equipe)
+    // Processa Jogos
+    const jogosGrupos = jogosData.filter(j => j.tipo_jogo === 'GRUPO')
+    
+    jogosGrupos.forEach(j => {
+        if (j.gols_a !== null && j.gols_b !== null) {
+            const tA = j.equipe_a_id; const tB = j.equipe_b_id
+            const gA = Number(j.gols_a); const gB = Number(j.gols_b)
 
-        artilhariaFinal = atletas?.map(atleta => ({
-            id: atleta.id,
-            nome: atleta.nome,
-            equipe: equipeMap[atleta.equipe_id] || 'Time',
-            gols: golsPorAtletaId[atleta.id]
-        })).sort((a, b) => b.gols - a.gols).slice(0, 10) || []
-    }
+            if (stats[tA] && stats[tB]) {
+                stats[tA].j++; stats[tB].j++;
+                stats[tA].gp += gA; stats[tA].gc += gB; stats[tA].sg += (gA - gB);
+                stats[tB].gp += gB; stats[tB].gc += gA; stats[tB].sg += (gB - gA);
 
-    // 6. CLASSIFICAÇÃO FIFA
-    const classificacaoFinal = (dadosView || []).map(time => {
-        const cartoes = statsTime[time.equipe_id] || { am: 0, verm: 0 }
-        const gp = time.gp || 0
-        const gc = time.gc || 0
-        return { 
-          ...time, 
-          gp, gc, 
-          sg: gp - gc,
-          ca: cartoes.am, 
-          cv: cartoes.verm,
-          media_gc: time.j > 0 ? (gc / time.j) : 999 
+                if (gA > gB) { stats[tA].v++; stats[tA].pts += 3; stats[tB].d++; }
+                else if (gB > gA) { stats[tB].v++; stats[tB].pts += 3; stats[tA].d++; }
+                else { stats[tA].e++; stats[tA].pts += 1; stats[tB].e++; stats[tB].pts += 1; }
+            }
         }
-    }).sort((a, b) => {
-        if (b.pts !== a.pts) return b.pts - a.pts;
-        if (b.sg !== a.sg) return b.sg - a.sg;
-        if (b.gp !== a.gp) return b.gp - a.gp;
-        if (b.v !== a.v) return b.v - a.v;
-        if (a.cv !== b.cv) return a.cv - b.cv; 
-        return a.ca - b.ca;
-    });
+    })
 
-    // 7. MELHOR DEFESA
-    const defesaFinal = [...classificacaoFinal]
-      .filter(t => t.j > 0) 
-      .sort((a, b) => a.gc - b.gc || a.media_gc - b.media_gc)
-      .slice(0, 5);
+    // Cartões
+    cartoesData.forEach(c => {
+        if (stats[c.equipe_id]) {
+            if (c.tipo === 'AMARELO') stats[c.equipe_id].ca++
+            if (c.tipo === 'VERMELHO') stats[c.equipe_id].cv++
+        }
+    })
 
-    // 8. FINAIS
-    const { data: finais } = await supabase
-        .from('jogos')
-        .select(`
-            id, tipo_jogo, gols_a, gols_b, penaltis_a, penaltis_b, finalizado, status, rodada, data_jogo, horario,
-            equipeA:equipes!jogos_equipe_a_id_fkey(nome_equipe, logo_url),
-            equipeB:equipes!jogos_equipe_b_id_fkey(nome_equipe, logo_url)
-        `)
-        .eq('etapa_id', etapa.id)
-        .in('tipo_jogo', ['FINAL', 'DISPUTA_3', 'SEMI', 'QUARTAS'])
-        .order('id', { ascending: true })
+    // Ordenação (Mesma lista do Admin)
+    let classificacao = Object.values(stats)
+    const regrasSalvas = etapaAtiva.regras?.criterios 
+    const criterios = regrasSalvas && regrasSalvas.length > 0 ? regrasSalvas : ['PONTOS', 'VITORIAS', 'SALDO', 'GOLS_PRO', 'VERMELHOS', 'AMARELOS']
 
-    const { data: menu } = await supabase.from('etapas').select('id, titulo, status, modalidade').order('created_at', { ascending: false })
+    classificacao.sort((a, b) => {
+        if (a.grupo < b.grupo) return -1
+        if (a.grupo > b.grupo) return 1
 
-    // RETORNO COM CACHE DE 30s (Igual ao Ao Vivo)
-    return NextResponse.json({ 
-        etapa, 
-        classificacao: classificacaoFinal,
-        artilharia: artilhariaFinal,
-        defesa: defesaFinal,
-        finais: finais || [],
-        menu: menu || []
+        for (let crit of criterios) {
+            if (crit === 'PONTOS') { if (b.pts !== a.pts) return b.pts - a.pts }
+            if (crit === 'VITORIAS') { if (b.v !== a.v) return b.v - a.v }
+            if (crit === 'SALDO') { if (b.sg !== a.sg) return b.sg - a.sg }
+            if (crit === 'GOLS_PRO') { if (b.gp !== a.gp) return b.gp - a.gp }
+            if (crit === 'GOLS_CONTRA') { if (a.gc !== b.gc) return a.gc - b.gc } 
+            if (crit === 'VERMELHOS') { if (a.cv !== b.cv) return a.cv - b.cv }
+            if (crit === 'AMARELOS') { if (a.ca !== b.ca) return a.ca - b.ca }
+        }
+        return 0
+    })
+
+    // Artilharia
+    const artilhariaMap = {}
+    golsData.forEach(g => {
+        if(g.atleta_id) {
+            if(!artilhariaMap[g.atleta_id]) {
+                artilhariaMap[g.atleta_id] = { 
+                    nome: g.atletas?.nome || 'Atleta', 
+                    equipe: g.equipes?.nome_equipe, 
+                    gols: 0 
+                }
+            }
+            artilhariaMap[g.atleta_id].gols++
+        }
+    })
+    const artilharia = Object.values(artilhariaMap).sort((a, b) => b.gols - a.gols).slice(0, 10)
+
+    // Defesa
+    const defesa = classificacao
+        .filter(t => t.j > 0)
+        .sort((a, b) => (a.gc / a.j) - (b.gc / b.j))
+        .slice(0, 5)
+
+    // Finais
+    const finais = jogosData
+        .filter(j => j.tipo_jogo !== 'GRUPO')
+        .map(j => {
+            const timeA = stats[j.equipe_a_id]?.nome_equipe || j.origem_a || 'A definir'
+            const timeB = stats[j.equipe_b_id]?.nome_equipe || j.origem_b || 'A definir'
+            return { ...j, equipeA: { nome_equipe: timeA }, equipeB: { nome_equipe: timeB } }
+        })
+
+    // ✅ RESPOSTA IDÊNTICA À API 'AO-VIVO'
+    return NextResponse.json({
+      menu: etapas,
+      etapa: etapaAtiva,
+      classificacao,
+      finais,
+      artilharia,
+      defesa,
+      now: new Date().toISOString()
     }, {
         status: 200,
         headers: {
             'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=59',
-            'x-nextjs-tags': 'tabela'
         }
     })
 
   } catch (e) {
-    console.error("ERRO API TABELA:", e.message)
-    return NextResponse.json({ error: e.message }, { status: 500 })
+    console.error("API Tabela Error:", e)
+    return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
   }
 }

@@ -3,11 +3,6 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Trophy, Info, Loader2, ChevronDown, Volume2, ShieldCheck, User } from 'lucide-react'
 
-// Função segura para evitar erros de JSON
-async function safeJson(res) {
-  try { return await res.json() } catch { return {} }
-}
-
 export default function Tabela() {
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState({ 
@@ -22,12 +17,12 @@ export default function Tabela() {
   const [patrocinios, setPatrocinios] = useState([])
   const [indexCarrossel, setIndexCarrossel] = useState(0)
 
-  // Carrega os dados da API (que agora tem Cache!)
   async function loadTabela(id = '', isBackground = false) {
     if (!isBackground) setLoading(true)
     try {
       const targetId = id || filtroId
-      const url = targetId ? `/api/tabela?etapa_id=${targetId}` : '/api/tabela'
+      const unique = new Date().getTime()
+      const url = targetId ? `/api/tabela?etapa_id=${targetId}&t=${unique}` : `/api/tabela?t=${unique}`
       
       const [res, resPatro] = await Promise.all([
         fetch(url, { cache: 'no-store' }), 
@@ -60,12 +55,10 @@ export default function Tabela() {
 
   useEffect(() => {
     loadTabela(filtroId)
-    // Atualiza silenciosamente a cada 30s
     const intervalo = setInterval(() => { loadTabela(filtroId, true) }, 30000)
     return () => clearInterval(intervalo)
   }, [filtroId])
 
-  // Rotação do Carrossel
   useEffect(() => {
     const carrosselItems = patrocinios.filter(p => p.cota === 'CARROSSEL')
     if (carrosselItems.length > 1) {
@@ -80,12 +73,22 @@ export default function Tabela() {
   const patrocinadoresCarrossel = useMemo(() => patrocinios.filter(p => p.cota === 'CARROSSEL'), [patrocinios])
   const patrocinadoresRodape = useMemo(() => patrocinios.filter(p => p.cota === 'RODAPE'), [patrocinios])
 
-  const grupos = useMemo(() => {
+  // --- ✅ LÓGICA DINÂMICA DE GRUPOS (PARA A, B, C, D...) ---
+  const gruposList = useMemo(() => {
     const lista = data.classificacao || []
-    const gA = lista.filter(t => t.grupo === 'A')
-    const gB = lista.filter(t => t.grupo === 'B')
-    if (gB.length > 0) return { A: gA, B: gB, modo: 'DUPLO' }
-    return { A: lista, modo: 'UNICO' }
+    if (lista.length === 0) return []
+    const gruposObj = {}
+    lista.forEach(time => {
+        const letra = (time.grupo || 'U').toUpperCase().trim()
+        if (!gruposObj[letra]) gruposObj[letra] = []
+        gruposObj[letra].push(time)
+    })
+    const letrasOrdenadas = Object.keys(gruposObj).sort()
+    return letrasOrdenadas.map(letra => ({
+        letra,
+        titulo: (letra === 'U' || (letrasOrdenadas.length === 1 && letra === 'A')) ? "Classificação Geral" : `Grupo ${letra}`,
+        times: gruposObj[letra]
+    }))
   }, [data.classificacao])
 
   if (loading && !data.etapa) {
@@ -127,7 +130,7 @@ export default function Tabela() {
                   <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
                 </span>
             )}
-            <Trophy size={24} />
+            < Trophy size={24} />
             <h1 className="text-2xl font-black uppercase italic tracking-tighter text-slate-900">Classificação</h1>
           </div>
         </div>
@@ -150,7 +153,7 @@ export default function Tabela() {
 
         <div className="grid lg:grid-cols-4 gap-8">
             <div className="lg:col-span-3 space-y-8">
-                {/* INFO ETAPA E CRITÉRIOS */}
+                {/* INFO ETAPA */}
                 <div className="bg-white border border-slate-200 rounded-2xl p-6 flex flex-col md:flex-row gap-6 items-center shadow-sm">
                     <div className="flex-1">
                         <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Torneio Oficial</p>
@@ -163,26 +166,72 @@ export default function Tabela() {
                     </div>
                 </div>
 
-                {/* TABELAS DE GRUPOS */}
-                <div className={`grid gap-6 ${grupos.modo === 'DUPLO' ? 'md:grid-cols-2' : 'grid-cols-1'}`}>
-                    <TabelaCard titulo={grupos.modo === 'DUPLO' ? "Grupo A" : "Classificação Geral"} times={grupos.A} cor="blue" />
-                    {grupos.modo === 'DUPLO' && <TabelaCard titulo="Grupo B" times={grupos.B} cor="yellow" />}
+                {/* ✅ TABELAS DINÂMICAS */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {gruposList.map((g, idx) => (
+                        <TabelaCard 
+                            key={g.titulo} 
+                            titulo={g.titulo} 
+                            times={g.times} 
+                            cor={idx % 2 === 0 ? 'blue' : 'yellow'} 
+                        />
+                    ))}
                 </div>
 
-                {/* FINAIS */}
+                {/* ✅ FINAIS E MATA-MATA (COM TROFÉU) */}
                 {data.finais?.length > 0 && (
                   <div className="pt-8">
                       <h2 className="text-xl font-black uppercase text-slate-900 mb-6 flex items-center gap-2"><Trophy className="text-yellow-500"/> Finais & Decisões</h2>
                       <div className="grid md:grid-cols-2 gap-6">
-                          {data.finais.map(jogo => (
-                              <div key={jogo.id} className="bg-white rounded-3xl p-6 border border-slate-200 shadow-lg flex justify-between items-center group hover:border-blue-500 transition-colors">
-                                  <span className="font-black text-sm w-1/3 text-right uppercase tracking-tighter truncate">{jogo.equipeA?.nome_equipe}</span>
-                                  <span className="bg-slate-900 text-white px-3 py-1 rounded-lg font-black mx-2 md:mx-4 shadow-md whitespace-nowrap">
-                                    {jogo.gols_a ?? 0} : {jogo.gols_b ?? 0}
-                                  </span>
-                                  <span className="font-black text-sm w-1/3 text-left uppercase tracking-tighter truncate">{jogo.equipeB?.nome_equipe}</span>
-                              </div>
-                          ))}
+                          {data.finais.map(jogo => {
+                              const tipo = jogo.tipo_jogo?.toUpperCase() || '';
+                              const obs = jogo.obs_publica?.toUpperCase() || '';
+                              const isFinal = tipo === 'FINAL' || (obs.includes('FINAL') && !obs.includes('SEMI') && !obs.includes('3º'));
+                              const gA = Number(jogo.gols_a || 0);
+                              const gB = Number(jogo.gols_b || 0);
+                              const pA = jogo.penaltis_a;
+                              const pB = jogo.penaltis_b;
+                              const isEncerrado = jogo.finalizado || jogo.status === 'FINALIZADO';
+
+                              let vencedor = null;
+                              if (isFinal && isEncerrado) {
+                                  if (gA > gB) vencedor = 'A';
+                                  else if (gB > gA) vencedor = 'B';
+                                  else if (pA !== null && pB !== null) {
+                                      if (Number(pA) > Number(pB)) vencedor = 'A';
+                                      else if (Number(pB) > Number(pA)) vencedor = 'B';
+                                  }
+                              }
+
+                              return (
+                                <div key={jogo.id} className={`bg-white rounded-3xl p-6 border shadow-lg flex justify-between items-center group transition-all ${vencedor ? 'border-yellow-400 shadow-yellow-100 ring-1 ring-yellow-400' : 'border-slate-200 hover:border-blue-500'}`}>
+                                    <div className={`w-1/3 flex items-center justify-end gap-1 ${vencedor === 'A' ? 'text-yellow-600' : 'text-slate-800'}`}>
+                                        {vencedor === 'A' && <Trophy size={16} className="text-yellow-500 fill-yellow-500 animate-bounce flex-shrink-0" />}
+                                        <span className="font-black text-sm uppercase tracking-tighter truncate text-right" title={jogo.equipeA?.nome_equipe}>
+                                            {jogo.equipeA?.nome_equipe}
+                                        </span>
+                                    </div>
+                                    <div className="flex flex-col items-center justify-center w-1/3 px-1">
+                                        <span className={`bg-slate-900 text-white px-3 py-1 rounded-lg font-black shadow-md whitespace-nowrap text-lg ${vencedor ? 'bg-gradient-to-r from-yellow-500 to-amber-500' : ''}`}>
+                                          {jogo.gols_a ?? 0} : {jogo.gols_b ?? 0}
+                                        </span>
+                                        {(jogo.penaltis_a !== null && jogo.penaltis_b !== null) && (
+                                          <div className="mt-2 flex flex-col items-center animate-in fade-in">
+                                              <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">Pênaltis</span>
+                                              <span className="text-[10px] font-black text-slate-700 mt-0.5">({jogo.penaltis_a} - {jogo.penaltis_b})</span>
+                                          </div>
+                                        )}
+                                        <span className="text-[9px] font-bold text-slate-300 mt-2 uppercase text-center leading-tight">{jogo.obs_publica || jogo.tipo_jogo}</span>
+                                    </div>
+                                    <div className={`w-1/3 flex items-center justify-start gap-1 ${vencedor === 'B' ? 'text-yellow-600' : 'text-slate-800'}`}>
+                                        <span className="font-black text-sm uppercase tracking-tighter truncate text-left" title={jogo.equipeB?.nome_equipe}>
+                                            {jogo.equipeB?.nome_equipe}
+                                        </span>
+                                        {vencedor === 'B' && <Trophy size={16} className="text-yellow-500 fill-yellow-500 animate-bounce flex-shrink-0" />}
+                                    </div>
+                                </div>
+                              )
+                          })}
                       </div>
                   </div>
                 )}
@@ -190,7 +239,6 @@ export default function Tabela() {
 
             {/* BARRA LATERAL */}
             <div className="lg:col-span-1 space-y-8">
-                {/* TOP ARTILHEIROS (Puxando da API) */}
                 <div className="bg-slate-900 text-white rounded-3xl p-6 shadow-xl border border-slate-800">
                     <h3 className="font-black uppercase tracking-widest text-sm mb-6 flex items-center gap-2 text-yellow-400 border-b border-white/10 pb-4"><Trophy size={16}/> Artilharia</h3>
                     <ul className="space-y-4">
@@ -203,11 +251,8 @@ export default function Tabela() {
                                 <span className="font-black text-lg text-yellow-400">{atleta.gols}</span>
                             </li>
                         ))}
-                        {data.artilharia?.length === 0 && <li className="text-xs text-slate-500 italic">Nenhum gol registrado.</li>}
                     </ul>
                 </div>
-
-                {/* MELHOR DEFESA (Puxando da API) */}
                 <div className="bg-white text-slate-900 rounded-3xl p-6 shadow-xl border border-slate-200 relative overflow-hidden">
                     <div className="absolute top-0 right-0 p-4 opacity-5"><ShieldCheck size={80}/></div>
                     <h3 className="font-black uppercase tracking-widest text-sm mb-6 flex items-center gap-2 text-blue-600 border-b border-slate-100 pb-4"><ShieldCheck size={16}/> Melhor Defesa</h3>
@@ -223,8 +268,6 @@ export default function Tabela() {
                         ))}
                     </ul>
                 </div>
-
-                {/* CARROSSEL LATERAL */}
                 {patrocinadoresCarrossel.length > 0 && (
                     <div className="animate-in fade-in duration-700">
                         <a href={patrocinadoresCarrossel[indexCarrossel].link_destino || '#'} target="_blank" className="block rounded-2xl border border-slate-200 overflow-hidden shadow-md group">
@@ -235,27 +278,15 @@ export default function Tabela() {
             </div>
         </div>
 
-        {/* RODAPÉ */}
+        {/* RODAPÉ COM ASSINATURA DEV */}
         <footer className="mt-20 pt-10 border-t border-slate-200">
-          {patrocinadoresRodape.length > 0 && (
-            <div className="mb-12 text-center">
-              <p className="text-[10px] font-black uppercase text-slate-400 tracking-[0.4em] mb-10">Apoio Institucional</p>
-              <div className="flex flex-wrap justify-center items-center gap-12 opacity-60 grayscale hover:grayscale-0 transition-all duration-700">
-                {patrocinadoresRodape.map(p => (
-                  <a key={p.id} href={p.link_destino || '#'} target="_blank">
-                    <img src={p.banner_url} alt={p.nome_empresa} className="h-10 md:h-14 w-auto object-contain hover:scale-110 transition-transform" />
-                  </a>
-                ))}
-              </div>
-            </div>
-          )}
           <div className="pt-8 border-t border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
             <p className="text-[10px] text-slate-400 font-mono uppercase tracking-widest font-bold">© 2026 GESTÃO ESPORTIVA PREMIUM</p>
             <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-slate-500">
               <span>Tecnologia por</span>
               <a href="https://wa.me/5547997037512" target="_blank" className="text-blue-500 flex items-center gap-2 group font-black">
                 <span className="tracking-tighter border-b-2 border-blue-500/10 group-hover:border-blue-500 transition-all">RC ENTERPRISE</span>
-                <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></div>
+                <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse shadow-[0_0_8px_#22c55e]"></div>
               </a>
             </div>
           </div>
@@ -265,7 +296,6 @@ export default function Tabela() {
   )
 }
 
-// ✅ COMPONENTE TABELACARD CORRIGIDO COM COLUNA 'GP'
 function TabelaCard({ titulo, times, cor }) {
     return (
         <div className="bg-white rounded-3xl shadow-lg border border-slate-200 overflow-hidden flex flex-col h-full hover:shadow-xl transition-shadow duration-300">
@@ -278,20 +308,14 @@ function TabelaCard({ titulo, times, cor }) {
                             <th className="p-3">Equipe</th>
                             <th className="p-3 text-center text-slate-900" title="Pontos">PTS</th>
                             <th className="p-3 text-center text-slate-400" title="Jogos">J</th>
-                            <th className="p-3 text-center text-slate-400 hidden sm:table-cell" title="Vitórias">V</th>
-                            
-                            {/* ADICIONADO GP (GOLS PRÓ) - Critério 3 */}
-                            <th className="p-3 text-center text-slate-500 hidden md:table-cell" title="Gols Pró">GP</th>
-                            
                             <th className="p-3 text-center text-slate-700 font-bold" title="Saldo de Gols">SG</th>
-                            <th className="p-3 text-center text-red-500 bg-red-50/20 font-black" title="Gols Contra (Goleiro)">GC</th>
-                            <th className="p-3 text-center text-yellow-600 bg-yellow-50/30" title="Cartões Amarelos">CA</th>
-                            <th className="p-3 text-center text-red-700 bg-red-100/30" title="Cartões Vermelhos">CV</th>
+                            <th className="p-3 text-center text-red-500 bg-red-50/20 font-black" title="Gols Contra">GC</th>
+                            <th className="p-3 text-center text-yellow-600" title="Amarelos">CA</th>
+                            <th className="p-3 text-center text-red-700" title="Vermelhos">CV</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
                         {times.map((time, i) => {
-                            // API já manda 'sg', mas mantemos fallback por segurança
                             const saldo = time.sg !== undefined ? time.sg : (time.gp || 0) - (time.gc || 0)
                             return (
                                 <tr key={time.equipe_id || i} className="hover:bg-slate-50 transition-colors group">
@@ -299,27 +323,15 @@ function TabelaCard({ titulo, times, cor }) {
                                     <td className="p-3 font-bold text-slate-700 uppercase tracking-tighter truncate max-w-[120px] group-hover:text-blue-600 transition-colors">{time.nome_equipe}</td>
                                     <td className="p-3 text-center font-black text-slate-900 text-base">{time.pts}</td>
                                     <td className="p-3 text-center text-slate-400 font-medium">{time.j}</td>
-                                    <td className="p-3 text-center text-slate-400 font-medium hidden sm:table-cell">{time.v}</td>
-                                    
-                                    {/* DADO GP */}
-                                    <td className="p-3 text-center text-slate-500 font-medium hidden md:table-cell">{time.gp || 0}</td>
-                                    
                                     <td className="p-3 text-center font-bold text-slate-600">{saldo}</td>
                                     <td className="p-3 text-center text-red-400 font-bold bg-red-50/10">{time.gc || 0}</td>
-                                    <td className="p-3 text-center font-bold text-yellow-600 bg-yellow-50/10">{time.ca || 0}</td>
-                                    <td className="p-3 text-center font-bold text-red-700 bg-red-100/10">{time.cv || 0}</td>
+                                    <td className="p-3 text-center font-bold text-yellow-600">{time.ca || 0}</td>
+                                    <td className="p-3 text-center font-bold text-red-700">{time.cv || 0}</td>
                                 </tr>
                             )
                         })}
                     </tbody>
                 </table>
-            </div>
-            <div className="p-3 bg-slate-50 border-t border-slate-100 flex flex-wrap justify-center gap-4 text-[8px] font-bold uppercase text-slate-400">
-                <span>SG: Saldo</span>
-                <span>GP: Gols Pró</span>
-                <span>GC: Gols Contra</span>
-                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-yellow-500"></span> CA: Amarelo</span>
-                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-600"></span> CV: Vermelho</span>
             </div>
         </div>
     )

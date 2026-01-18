@@ -5,7 +5,7 @@ import {
   Settings, LayoutDashboard, Users, Trash2, CheckCircle, Phone,
   Image as ImageIcon, AlignLeft, LogOut, ClipboardList, Loader2,
   AlertCircle, Save, Trophy, Type, Calendar, MapPin, DollarSign, FileText,
-  FileCheck, XCircle, Video, MessageSquare, PlusCircle
+  FileCheck, XCircle, Video, MessageSquare, PlusCircle, Swords
 } from 'lucide-react'
 
 // --- FUNÇÕES AUXILIARES ---
@@ -178,7 +178,13 @@ export default function AdminPanel() {
           <nav className="space-y-2">
             <button onClick={() => setAbaAtiva('dashboard')} className={`w-full text-left p-4 rounded-xl font-bold uppercase text-xs tracking-wider flex items-center gap-3 transition-all ${abaAtiva === 'dashboard' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}><Users size={18} /> Auditoria / Equipes</button>
             <button onClick={() => setAbaAtiva('config')} className={`w-full text-left p-4 rounded-xl font-bold uppercase text-xs tracking-wider flex items-center gap-3 transition-all ${abaAtiva === 'config' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}><Settings size={18} /> Editor Completo</button>
-            <Link href="/admin/jogos" className="w-full text-left p-4 rounded-xl font-bold uppercase text-xs tracking-wider flex items-center gap-3 transition-all text-slate-400 hover:bg-slate-800 hover:text-white"><ClipboardList size={18} /> Gestão de Jogos</Link>
+            
+            <div className="pt-4 pb-2 text-[10px] font-black uppercase text-slate-600 tracking-widest pl-2">Campeonato</div>
+            
+            <Link href="/admin/jogos-novo" className="w-full text-left p-4 rounded-xl font-bold uppercase text-xs tracking-wider flex items-center gap-3 transition-all text-slate-400 hover:bg-slate-800 hover:text-white"><ClipboardList size={18} /> Gestão de Jogos</Link>
+            
+            {/* ✅ NOVO LINK PARA MODELOS */}
+            <Link href="/admin/modelos" className="w-full text-left p-4 rounded-xl font-bold uppercase text-xs tracking-wider flex items-center gap-3 transition-all text-slate-400 hover:bg-slate-800 hover:text-white"><Swords size={18} /> Modelos & Regras</Link>
           </nav>
         </div>
         <button onClick={sair} className="mt-8 w-full text-left p-4 rounded-xl font-bold uppercase text-xs flex gap-3 hover:bg-red-900/20 text-red-400 hover:text-red-300 transition-colors"><LogOut size={18} /> Encerrar Sessão</button>
@@ -217,7 +223,7 @@ export default function AdminPanel() {
                                         {!eq.termo_assinado ? (
                                             <div className="flex gap-2">
                                                 <button onClick={() => gerenciarEquipe(eq.id, 'approve_doc')} className="bg-green-600 text-white p-2 rounded-lg hover:bg-green-700 shadow-sm transition-colors"><CheckCircle size={16}/></button>
-                                                <button onClick={() => gerenciarEquipe(eq.id, 'reject_doc')} className="bg-red-500 text-white p-2 rounded-lg hover:bg-red-600 shadow-sm transition-colors"><XCircle size={16}/></button>
+                                                <button onClick={() => gerenciarEquipe(eq.id, 'reject_doc')} className="bg-red-50 text-white p-2 rounded-lg hover:bg-red-600 shadow-sm transition-colors"><XCircle size={16}/></button>
                                             </div>
                                         ) : (
                                             <div className="flex items-center gap-2">
