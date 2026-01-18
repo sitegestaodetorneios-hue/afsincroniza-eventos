@@ -1,9 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 
-// ⚠️ SEM 'export const revalidate' ou 'force-dynamic' 
-// Deixamos o controle total para o Header da resposta, igual à sua API ao-vivo.
-
 function supabasePublic() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -14,7 +11,6 @@ function supabasePublic() {
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const etapa_id = searchParams.get('etapa_id')
-
   const supabase = supabasePublic()
 
   try {
@@ -28,7 +24,6 @@ export async function GET(request) {
       ? etapas.find(e => e.id == etapa_id) 
       : etapas[0]
 
-    // Se não tiver etapa, retorna vazio mas com o mesmo cache para proteger
     if (!etapaAtiva) {
         return NextResponse.json({ menu: etapas, etapa: null }, {
             status: 200,
@@ -38,12 +33,12 @@ export async function GET(request) {
 
     const id = etapaAtiva.id
 
-    // 2. BUSCAR DADOS BRUTOS (PARALELO)
+    // 2. BUSCAR DADOS BRUTOS
     const [timesRes, jogosRes, cartoesRes, artilhariaRes] = await Promise.all([
         supabase.from('etapa_equipes').select('equipe_id, grupo, equipes(nome_equipe)').eq('etapa_id', id),
         supabase.from('jogos').select('*').eq('etapa_id', id).order('id', { ascending: true }),
         supabase.from('jogo_eventos').select('*').in('tipo', ['AMARELO', 'VERMELHO']), 
-        supabase.from('jogo_eventos').select('atleta_id, tipo, equipes(nome_equipe), atletas(nome)').eq('tipo', 'GOL')
+        supabase.from('jogo_eventos').select('atleta_id, tipo, equipes(nome_equipe), atletas(nome), jogo_id').eq('tipo', 'GOL')
     ])
 
     const timesData = timesRes.data || []
@@ -53,39 +48,27 @@ export async function GET(request) {
     const cartoesData = (cartoesRes.data || []).filter(c => jogosIds.includes(c.jogo_id))
     const golsData = (artilhariaRes.data || []).filter(g => jogosIds.includes(g.jogo_id))
 
-    // =================================================================================
-    // 3. CÁLCULO DE CLASSIFICAÇÃO (LÓGICA AGRESSIVA IGUAL ADMIN)
-    // =================================================================================
+    // 3. CÁLCULO DE CLASSIFICAÇÃO
     const stats = {} 
-    
-    // Inicializa Times
     timesData.forEach(t => {
         let grp = (t.grupo || 'U').trim().toUpperCase().replace('GRUPO', '').trim()
         if(grp === '') grp = 'U'
-        
         stats[t.equipe_id] = { 
             equipe_id: t.equipe_id, 
             nome_equipe: t.equipes?.nome_equipe || 'Time', 
-            grupo: grp, 
-            pts: 0, v: 0, e: 0, d: 0, j: 0, 
-            sg: 0, gp: 0, gc: 0, 
-            ca: 0, cv: 0 
+            grupo: grp, pts: 0, v: 0, e: 0, d: 0, j: 0, sg: 0, gp: 0, gc: 0, ca: 0, cv: 0 
         }
     })
 
-    // Processa Jogos
     const jogosGrupos = jogosData.filter(j => j.tipo_jogo === 'GRUPO')
-    
     jogosGrupos.forEach(j => {
         if (j.gols_a !== null && j.gols_b !== null) {
             const tA = j.equipe_a_id; const tB = j.equipe_b_id
             const gA = Number(j.gols_a); const gB = Number(j.gols_b)
-
             if (stats[tA] && stats[tB]) {
                 stats[tA].j++; stats[tB].j++;
                 stats[tA].gp += gA; stats[tA].gc += gB; stats[tA].sg += (gA - gB);
                 stats[tB].gp += gB; stats[tB].gc += gA; stats[tB].sg += (gB - gA);
-
                 if (gA > gB) { stats[tA].v++; stats[tA].pts += 3; stats[tB].d++; }
                 else if (gB > gA) { stats[tB].v++; stats[tB].pts += 3; stats[tA].d++; }
                 else { stats[tA].e++; stats[tA].pts += 1; stats[tB].e++; stats[tB].pts += 1; }
@@ -93,7 +76,6 @@ export async function GET(request) {
         }
     })
 
-    // Cartões
     cartoesData.forEach(c => {
         if (stats[c.equipe_id]) {
             if (c.tipo === 'AMARELO') stats[c.equipe_id].ca++
@@ -101,15 +83,13 @@ export async function GET(request) {
         }
     })
 
-    // Ordenação (Mesma lista do Admin)
     let classificacao = Object.values(stats)
     const regrasSalvas = etapaAtiva.regras?.criterios 
-    const criterios = regrasSalvas && regrasSalvas.length > 0 ? regrasSalvas : ['PONTOS', 'VITORIAS', 'SALDO', 'GOLS_PRO', 'VERMELHOS', 'AMARELOS']
+    const criterios = (regrasSalvas && regrasSalvas.length > 0) ? regrasSalvas : ['PONTOS', 'VITORIAS', 'SALDO', 'GOLS_PRO', 'VERMELHOS', 'AMARELOS']
 
     classificacao.sort((a, b) => {
         if (a.grupo < b.grupo) return -1
         if (a.grupo > b.grupo) return 1
-
         for (let crit of criterios) {
             if (crit === 'PONTOS') { if (b.pts !== a.pts) return b.pts - a.pts }
             if (crit === 'VITORIAS') { if (b.v !== a.v) return b.v - a.v }
@@ -122,7 +102,7 @@ export async function GET(request) {
         return 0
     })
 
-    // Artilharia
+    // 4. ARTILHARIA
     const artilhariaMap = {}
     golsData.forEach(g => {
         if(g.atleta_id) {
@@ -138,13 +118,13 @@ export async function GET(request) {
     })
     const artilharia = Object.values(artilhariaMap).sort((a, b) => b.gols - a.gols).slice(0, 10)
 
-    // Defesa
+    // 5. DEFESA
     const defesa = classificacao
         .filter(t => t.j > 0)
         .sort((a, b) => (a.gc / a.j) - (b.gc / b.j))
         .slice(0, 5)
 
-    // Finais
+    // 6. FINAIS
     const finais = jogosData
         .filter(j => j.tipo_jogo !== 'GRUPO')
         .map(j => {
@@ -153,7 +133,7 @@ export async function GET(request) {
             return { ...j, equipeA: { nome_equipe: timeA }, equipeB: { nome_equipe: timeB } }
         })
 
-    // ✅ RESPOSTA IDÊNTICA À API 'AO-VIVO'
+    // ✅ RESPOSTA FINAL COM CACHE
     return NextResponse.json({
       menu: etapas,
       etapa: etapaAtiva,

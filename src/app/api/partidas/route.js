@@ -28,7 +28,6 @@ export async function GET(request) {
     if (etapaId) {
         etapaAtual = menu?.find(e => e.id === etapaId)
     } else {
-        // Tenta pegar EM_ANDAMENTO, senão pega a primeira
         etapaAtual = menu?.find(e => e.status === 'EM_ANDAMENTO') || menu?.[0]
         etapaId = etapaAtual?.id
     }
@@ -37,10 +36,10 @@ export async function GET(request) {
         return NextResponse.json({ jogos: [], menu: [], etapa: null })
     }
 
-    // 3. BUSCA JOGOS (SEM JOIN COMPLICADO - SELECT SIMPLES)
+    // 3. BUSCA JOGOS
     const { data: jogos, error: errJogos } = await supabase
       .from('jogos')
-      .select('*') // Pega tudo, sem tentar adivinhar relacionamento
+      .select('*')
       .eq('etapa_id', etapaId)
       .order('rodada', { ascending: true })
       .order('data_jogo', { ascending: true })
@@ -48,34 +47,28 @@ export async function GET(request) {
 
     if (errJogos) throw errJogos
 
-    // 4. BUSCA OS TIMES MANUALMENTE (Para não falhar nunca)
+    // 4. BUSCA OS TIMES MANUALMENTE (Para garantir os nomes na tela)
     let jogosCompletos = []
     
     if (jogos && jogos.length > 0) {
-        // Pega todos os IDs de times envolvidos nesses jogos
-        const idsTimes = [
-            ...new Set(jogos.flatMap(j => [j.equipe_a_id, j.equipe_b_id]))
-        ].filter(Boolean) // Remove nulos
+        const idsTimes = [...new Set(jogos.flatMap(j => [j.equipe_a_id, j.equipe_b_id]))].filter(Boolean)
 
-        // Busca os nomes desses times
         const { data: times } = await supabase
             .from('equipes')
             .select('id, nome_equipe, logo_url')
             .in('id', idsTimes)
 
-        // Cria um mapa para acesso rápido: { 1: {nome: 'Time A'}, 2: {nome: 'Time B'} }
         const mapaTimes = {}
         times?.forEach(t => mapaTimes[t.id] = t)
 
-        // Junta tudo manualmente
         jogosCompletos = jogos.map(j => ({
             ...j,
-            equipeA: mapaTimes[j.equipe_a_id] || { nome_equipe: 'A Definir' },
-            equipeB: mapaTimes[j.equipe_b_id] || { nome_equipe: 'A Definir' }
+            equipeA: mapaTimes[j.equipe_a_id] || { nome_equipe: j.origem_a || 'A Definir' },
+            equipeB: mapaTimes[j.equipe_b_id] || { nome_equipe: j.origem_b || 'A Definir' }
         }))
     }
 
-    // 5. RETORNA
+    // 5. RETORNA COM CACHE IGUAL AO-VIVO
     return NextResponse.json({
         jogos: jogosCompletos,
         menu: menu || [],
