@@ -1,8 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 
-// Força o Next.js a tratar como dinâmica para a Vercel respeitar o Cache-Control manual
-export const dynamic = 'force-dynamic'
+// ⚠️ REMOVIDOS 'force-dynamic' e 'revalidate' para o Cache funcionar igual ao seu Ao-Vivo
+// O controle será 100% via Header manual abaixo.
 
 function supabasePublic() {
   return createClient(
@@ -17,6 +17,7 @@ export async function GET(request) {
   const supabase = supabasePublic()
 
   try {
+    // 1. CARREGAR ETAPAS (MENU)
     const { data: etapas } = await supabase
       .from('etapas')
       .select('id, titulo, status, modalidade, regras')
@@ -33,6 +34,7 @@ export async function GET(request) {
 
     const id = etapaAtiva.id
 
+    // 2. BUSCAR DADOS BRUTOS (PARALELO)
     const [timesRes, jogosRes, cartoesRes, artilhariaRes] = await Promise.all([
         supabase.from('etapa_equipes').select('equipe_id, grupo, equipes(nome_equipe)').eq('etapa_id', id),
         supabase.from('jogos').select('*').eq('etapa_id', id).order('id', { ascending: true }),
@@ -46,13 +48,13 @@ export async function GET(request) {
     const cartoesData = (cartoesRes.data || []).filter(c => jogosIds.includes(c.jogo_id))
     const golsData = (artilhariaRes.data || []).filter(g => jogosIds.includes(g.jogo_id))
 
+    // 3. CÁLCULO DE CLASSIFICAÇÃO (LOGICA ORIGINAL PRESERVADA)
     const stats = {} 
     timesData.forEach(t => {
         let grp = (t.grupo || 'U').trim().toUpperCase().replace('GRUPO', '').trim()
         if(grp === '') grp = 'U'
         stats[t.equipe_id] = { 
-            equipe_id: t.equipe_id, 
-            nome_equipe: t.equipes?.nome_equipe || 'Time', 
+            equipe_id: t.equipe_id, nome_equipe: t.equipes?.nome_equipe || 'Time', 
             grupo: grp, pts: 0, v: 0, e: 0, d: 0, j: 0, sg: 0, gp: 0, gc: 0, ca: 0, cv: 0 
         }
     })
@@ -99,23 +101,22 @@ export async function GET(request) {
         return 0
     })
 
+    // 4. ARTILHARIA (PRESERVADA)
     const artilhariaMap = {}
     golsData.forEach(g => {
         if(g.atleta_id) {
             if(!artilhariaMap[g.atleta_id]) {
-                artilhariaMap[g.atleta_id] = { 
-                    nome: g.atletas?.nome || 'Atleta', 
-                    equipe: g.equipes?.nome_equipe, 
-                    gols: 0 
-                }
+                artilhariaMap[g.atleta_id] = { nome: g.atletas?.nome || 'Atleta', equipe: g.equipes?.nome_equipe, gols: 0 }
             }
             artilhariaMap[g.atleta_id].gols++
         }
     })
     const artilharia = Object.values(artilhariaMap).sort((a, b) => b.gols - a.gols).slice(0, 10)
 
+    // 5. DEFESA (PRESERVADA)
     const defesa = classificacao.filter(t => t.j > 0).sort((a, b) => (a.gc / a.j) - (b.gc / b.j)).slice(0, 5)
 
+    // 6. FINAIS (PRESERVADA)
     const finais = jogosData
         .filter(j => j.tipo_jogo !== 'GRUPO')
         .map(j => {
@@ -124,6 +125,7 @@ export async function GET(request) {
             return { ...j, equipeA: { nome_equipe: timeA }, equipeB: { nome_equipe: timeB } }
         })
 
+    // ✅ RESPOSTA COM CACHE MANUAL (ESTRUTURA IGUAL AO SEU AO-VIVO)
     return NextResponse.json({
       menu: etapas, etapa: etapaAtiva, classificacao, finais, artilharia, defesa, now: new Date().toISOString()
     }, {
