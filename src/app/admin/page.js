@@ -46,10 +46,10 @@ export default function AdminPanel() {
     slogan: '', texto_empresa: '', missao: '', valores: '',
     status_futsal: 'EM_BREVE', titulo_futsal: '', desc_futsal: '',
     local_futsal: '', inicio_futsal: '', vagas_futsal: 0,
-    preco_futsal: 150.00,
+    preco_futsal: 0.00,
     status_society: 'EM_BREVE', titulo_society: '', desc_society: '',
     local_society: '', inicio_society: '', vagas_society: 0,
-    preco_society: 150.00,
+    preco_society: 0.00,
     texto_footer: '',
   }), [])
 
@@ -87,8 +87,8 @@ export default function AdminPanel() {
 
           vagas_futsal: Number(cfg.vagas_futsal || 0),
           vagas_society: Number(cfg.vagas_society || 0),
-          preco_futsal: Number(cfg.preco_futsal || 150.00),
-          preco_society: Number(cfg.preco_society || 150.00),
+          preco_futsal: Number(cfg.preco_futsal || 0.00),
+          preco_society: Number(cfg.preco_society || 0.00),
         })
       }
 
