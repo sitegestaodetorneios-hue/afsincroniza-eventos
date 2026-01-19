@@ -36,7 +36,7 @@ export default function Regulamento() {
           <header className="border-b-2 border-slate-100 pb-8 mb-8 text-center">
             <FileText size={48} className="text-slate-200 mx-auto mb-4" />
             <h1 className="text-3xl font-black text-slate-900 uppercase tracking-tighter mb-2">
-              Regulamento (Versão Provisória)
+              Regulamento 2026
             </h1>
             <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">
               {competencia} • Temporada 2026
@@ -52,7 +52,7 @@ export default function Regulamento() {
             <div>
               <p className="font-black text-slate-900">Aviso importante</p>
               <p className="text-slate-600 text-sm font-medium">
-                Este é um texto-base para organização do site. As regras oficiais (datas, valores, tabela e critérios)
+                As regras oficiais (datas, valores, tabela e critérios)
                 serão publicadas/atualizadas pela organização conforme abertura das etapas.
               </p>
             </div>
@@ -87,7 +87,7 @@ export default function Regulamento() {
                 por etapa e modalidade, e será publicado junto com a tabela oficial.
               </p>
               <p>
-                Critérios usuais (exemplo): pontos, vitórias, saldo de gols, gols pró, confronto direto (quando aplicável).
+                Critérios usuais (exemplo): pontos, vitórias, saldo de gols, gols pró, vitorias, Cartões.
               </p>
             </section>
 

@@ -183,12 +183,12 @@ export default function Home() {
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Vagas totais</p>
               </div>
               <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-                <p className="text-2xl font-black text-slate-900">Sub 12</p>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Masc. Suiço</p>
+                <p className="text-2xl font-black text-slate-900">SUB 12</p>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Masc. Suiço Etapa Blumenau</p>
               </div>
               <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-                <p className="text-2xl font-black text-slate-900">Em Breve</p>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Sub 10,14 E 16 Masc.</p>
+                <p className="text-2xl font-black text-slate-900">SUB 10,14 E 16 Masc.</p>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Em breve</p>
               </div>
             </div>
           </div>

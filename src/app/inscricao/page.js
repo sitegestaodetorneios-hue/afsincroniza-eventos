@@ -27,7 +27,7 @@ export default function Inscricao() {
   })
   const [siteConfigs, setSiteConfigs] = useState({
     titulo_futsal: 'Carregando...', desc_futsal: '...',
-    titulo_society: 'Carregando...', desc_society: '...'
+    titulo_suiço: 'Carregando...', desc_society: '...'
   })
   
   const [form, setForm] = useState({
@@ -93,7 +93,7 @@ export default function Inscricao() {
                 <div className="grid md:grid-cols-2 gap-8">
                     {[
                         { id: 'FUTSAL', v: vagas.futsal, t: siteConfigs.titulo_futsal, d: siteConfigs.desc_futsal, color: 'blue' },
-                        { id: 'SOCIETY', v: vagas.society, t: siteConfigs.titulo_society, d: siteConfigs.desc_society, color: 'green' }
+                        { id: 'SUIÇO', v: vagas.society, t: siteConfigs.titulo_society, d: siteConfigs.desc_society, color: 'green' }
                     ].map((item) => (
                         <button key={item.id} disabled={item.v.esgotado || loading} onClick={() => { setForm({...form, modalidade: item.id}); setStep(2); }} className={`group relative text-left p-1 rounded-[2.5rem] transition-all duration-500 ${item.v.esgotado ? 'grayscale opacity-60' : 'hover:scale-[1.02] hover:shadow-2xl'}`}>
                             <div className="bg-white rounded-[2.4rem] p-8 h-full border border-slate-100 relative overflow-hidden">
