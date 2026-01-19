@@ -30,22 +30,24 @@ function waLink(number, text) {
 
 export default function Home() {
   const [siteData, setSiteData] = useState(null)
-  const [patrocinios, setPatrocinios] = useState([]) 
+  const [patrocinios, setPatrocinios] = useState([])
 
   useEffect(() => {
-    // ✅ CACHE ATIVADO: Removemos o 'no-store'. 
+    // ✅ CACHE ATIVADO: Removemos o 'no-store'.
     // Agora ele obedece o Cache de 1 HORA configurado nas APIs.
     Promise.all([
       fetch('/api/config').then(res => res.json()),
       fetch('/api/admin/patrocinios').then(res => res.json())
-    ]).then(([config, patro]) => {
-      setSiteData(config || {})
-      setPatrocinios(Array.isArray(patro) ? patro : [])
-    }).catch((err) => {
-      console.error("Erro ao carregar Home:", err)
-      setSiteData({})
-      setPatrocinios([])
-    })
+    ])
+      .then(([config, patro]) => {
+        setSiteData(config || {})
+        setPatrocinios(Array.isArray(patro) ? patro : [])
+      })
+      .catch((err) => {
+        console.error("Erro ao carregar Home:", err)
+        setSiteData({})
+        setPatrocinios([])
+      })
   }, [])
 
   // Separação lógica dos patrocinadores
@@ -79,14 +81,21 @@ export default function Home() {
   const suicoOpen = Boolean(siteData?.status_society === 'ABERTA' || siteData?.inscricoes_society_abertas)
   const algumaInscricaoAberta = futsalOpen || suicoOpen
 
-  const heroTitle = siteData?.titulo_destaque || defs.competitionName
-  const heroSubtitle = siteData?.subtitulo || 'Futsal e Suíço com categorias Sub-08 a Sub-16. Feminino livre participa apenas da grande final.'
+  // ===== HERO (NOVO TEXTO / ORDEM) =====
+  // Mantive compatível com seu config atual e adicionei 3 campos opcionais:
+  // hero_headline, hero_tagline, hero_badge
+  const heroHeadline = siteData?.hero_headline || 'O palco da base local.'
+  const heroTagline = siteData?.hero_tagline || 'Somos apaixonados por futebol de base.'
+  const heroBadge = siteData?.hero_badge || `Vem aí: ${defs.competitionName}`
+  const heroSubtitle = siteData?.subtitulo || 'Traga sua equipe para a elite.'
+  // ====================================
+
   const heroImg = siteData?.imagem_fundo || 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?auto=format&fit=crop&q=80&w=1400'
   const logoUrl = siteData?.logo_url || '/brand/logo-sincroniza.jpg'
 
   return (
     <main className="min-h-screen bg-slate-50 text-slate-900 selection:bg-blue-600 selection:text-white">
-      
+
       {/* TOP BAR */}
       <div className="bg-slate-900 text-white py-3 px-6 md:px-12 text-[10px] font-bold uppercase tracking-[0.2em] flex flex-col md:flex-row justify-between items-center gap-2 text-center md:text-left">
         <span className="opacity-80">{siteData?.texto_topo || defs.companyName}</span>
@@ -114,9 +123,9 @@ export default function Home() {
 
         {/* MATCH CENTER MENU (BOTÕES DE AÇÃO RÁPIDA) */}
         <div className="flex gap-2 bg-slate-100 p-1 rounded-lg border border-slate-200 mb-4 lg:mb-0 shadow-inner">
-            <Link href="/ao-vivo"><button className="flex items-center gap-2 px-3 py-2 rounded-md font-black text-[10px] uppercase bg-white text-red-600 shadow-sm hover:scale-105 transition-transform border border-slate-100"><Radio size={12} className="animate-pulse"/> Ao Vivo</button></Link>
-            <Link href="/tabela"><button className="flex items-center gap-2 px-3 py-2 rounded-md font-bold text-[10px] uppercase text-slate-600 hover:bg-white hover:text-blue-600 transition-colors"><Trophy size={12}/> Tabela</button></Link>
-            <Link href="/partidas"><button className="flex items-center gap-2 px-3 py-2 rounded-md font-bold text-[10px] uppercase text-slate-600 hover:bg-white hover:text-blue-600 transition-colors"><Calendar size={12}/> Jogos</button></Link>
+          <Link href="/ao-vivo"><button className="flex items-center gap-2 px-3 py-2 rounded-md font-black text-[10px] uppercase bg-white text-red-600 shadow-sm hover:scale-105 transition-transform border border-slate-100"><Radio size={12} className="animate-pulse" /> Ao Vivo</button></Link>
+          <Link href="/tabela"><button className="flex items-center gap-2 px-3 py-2 rounded-md font-bold text-[10px] uppercase text-slate-600 hover:bg-white hover:text-blue-600 transition-colors"><Trophy size={12} /> Tabela</button></Link>
+          <Link href="/partidas"><button className="flex items-center gap-2 px-3 py-2 rounded-md font-bold text-[10px] uppercase text-slate-600 hover:bg-white hover:text-blue-600 transition-colors"><Calendar size={12} /> Jogos</button></Link>
         </div>
 
         <div className="flex flex-wrap justify-center gap-2 md:gap-6 text-xs font-bold uppercase tracking-widest text-slate-500 items-center">
@@ -135,29 +144,51 @@ export default function Home() {
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-100/50 text-blue-700 text-[10px] font-black uppercase tracking-widest mb-6 border border-blue-100 animate-in fade-in slide-in-from-left-4 duration-700">
               <span className="w-2 h-2 rounded-full bg-blue-600 animate-ping" /> Temporada 2026
             </div>
-            <h1 className="text-5xl md:text-7xl lg:text-8xl font-black text-slate-900 leading-[0.9] tracking-tighter mb-7">{heroTitle}</h1>
-            <p className="text-slate-500 text-lg md:text-xl mb-7 max-w-xl leading-relaxed font-medium">{heroSubtitle}</p>
+
+            {/* NOVO: título e tagline como você pediu */}
+            <h1 className="text-5xl md:text-7xl lg:text-8xl font-black text-slate-900 leading-[0.9] tracking-tighter mb-6">
+              {heroHeadline}
+            </h1>
+
+            <p className="text-slate-700 text-lg md:text-2xl mb-5 max-w-xl leading-relaxed font-bold">
+              {heroTagline}
+            </p>
+
+            {/* NOVO: Taça Pérolas desce pra baixo em destaque (badge) */}
+            <div className="inline-flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-full text-[10px] md:text-xs font-black uppercase tracking-[0.25em] border border-slate-800 shadow-lg mb-6">
+              <Trophy size={14} className="text-blue-300" />
+              {heroBadge}
+            </div>
+
+            {/* Mantive um subtítulo curto (editável via config atual: siteData.subtitulo) */}
+            <p className="text-slate-500 text-base md:text-lg mb-7 max-w-xl leading-relaxed font-medium">
+              {heroSubtitle}
+            </p>
+
+            {/* Mantive o slogan (você pode ajustar depois no config) */}
             <p className="text-slate-700 font-bold mb-8 italic">{defs.slogan}</p>
+
             <div className="flex flex-col sm:flex-row gap-4">
               {algumaInscricaoAberta ? (
-                  <a href="#competicoes" className="group"><button className="w-full sm:w-auto bg-slate-900 text-white font-bold px-8 py-5 rounded-2xl hover:bg-blue-600 transition-all shadow-xl flex items-center justify-center gap-3">VER COMPETIÇÕES <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" /></button></a>
+                <a href="#competicoes" className="group"><button className="w-full sm:w-auto bg-slate-900 text-white font-bold px-8 py-5 rounded-2xl hover:bg-blue-600 transition-all shadow-xl flex items-center justify-center gap-3">VER COMPETIÇÕES <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" /></button></a>
               ) : (
-                  <Link href="/ao-vivo" className="group"><button className="w-full sm:w-auto bg-red-600 text-white font-bold px-8 py-5 rounded-2xl hover:bg-red-700 transition-all shadow-xl flex items-center justify-center gap-3"><PlayCircle size={18} /> ACOMPANHAR AO VIVO</button></Link>
+                <Link href="/ao-vivo" className="group"><button className="w-full sm:w-auto bg-red-600 text-white font-bold px-8 py-5 rounded-2xl hover:bg-red-700 transition-all shadow-xl flex items-center justify-center gap-3"><PlayCircle size={18} /> ACOMPANHAR AO VIVO</button></Link>
               )}
               <a href="#inscricao"><button className="w-full sm:w-auto bg-white text-slate-900 border-2 border-slate-200 font-bold px-8 py-5 rounded-2xl hover:bg-slate-50 transition-all flex items-center justify-center gap-2"><PlayCircle size={18} /> COMO FUNCIONA</button></a>
             </div>
+
             <div className="mt-10 grid grid-cols-3 gap-4 pt-8 border-t border-slate-200/60 text-center">
               <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
                 <p className="text-2xl font-black text-slate-900">{totalVagas || '—'}</p>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Vagas totais</p>
               </div>
               <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-                <p className="text-2xl font-black text-slate-900">Sub 08–16</p>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Masc.</p>
+                <p className="text-2xl font-black text-slate-900">Sub 12</p>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Masc. Suiço</p>
               </div>
               <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-                <p className="text-2xl font-black text-slate-900">Final</p>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Fem.</p>
+                <p className="text-2xl font-black text-slate-900">Em Breve</p>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Sub 10,14 E 16 Masc.</p>
               </div>
             </div>
           </div>
@@ -169,35 +200,36 @@ export default function Home() {
               <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-transparent to-transparent opacity-90" />
               <div className="absolute bottom-0 left-0 p-8 w-full">
                 <div className="bg-white/10 backdrop-blur-md border border-white/20 p-6 rounded-2xl">
-                  <p className="text-blue-300 font-black uppercase text-xs tracking-widest mb-2 flex items-center gap-2"><Trophy size={14}/> Match Center</p>
-                  <p className="text-white text-sm mb-4 font-bold">Classificação, Artilharia e Goleiro Menos Vazado em tempo real.</p>
+                  <p className="text-blue-300 font-black uppercase text-xs tracking-widest mb-2 flex items-center gap-2"><Trophy size={14} /> Match Center</p>
+                  <p className="text-white text-sm mb-4 font-bold">Classificação, Artilharia e Time Menos Vazado em tempo real.</p>
                   <div className="grid grid-cols-2 gap-2">
-                      <Link href="/tabela" className="bg-white/20 hover:bg-white/30 text-white text-[10px] font-black uppercase py-2 rounded-lg text-center transition-colors">Ver Tabela</Link>
-                      <Link href="/partidas" className="bg-white/20 hover:bg-white/30 text-white text-[10px] font-black uppercase py-2 rounded-lg text-center transition-colors">Todos os Jogos</Link>
+                    <Link href="/tabela" className="bg-white/20 hover:bg-white/30 text-white text-[10px] font-black uppercase py-2 rounded-lg text-center transition-colors">Ver Tabela</Link>
+                    <Link href="/partidas" className="bg-white/20 hover:bg-white/30 text-white text-[10px] font-black uppercase py-2 rounded-lg text-center transition-colors">Todos os Jogos</Link>
                   </div>
                 </div>
               </div>
             </div>
           </div>
+
         </div>
       </section>
 
       {/* PATROCINADOR MASTER (ENTRE HERO E CONTEÚDO) */}
       {master && (
         <section className="max-w-7xl mx-auto px-6 md:px-12 mb-20 animate-in fade-in zoom-in duration-1000">
-           <div className="bg-white p-2 rounded-[2.5rem] border border-slate-200 shadow-2xl overflow-hidden relative group">
-             <a href={master.link_destino || '#'} target="_blank">
-               {master.video_url ? (
-                 <div className="relative aspect-[16/6] md:aspect-[21/6] w-full rounded-[2rem] overflow-hidden bg-slate-900">
-                   <video src={master.video_url} autoPlay loop muted playsInline className="w-full h-full object-cover opacity-90" />
-                   <div className="absolute top-4 right-4 bg-black/40 backdrop-blur-md p-2 rounded-full text-white/80"><Volume2 size={16}/></div>
-                 </div>
-               ) : (
-                 <img src={master.banner_url} className="w-full h-auto rounded-[2rem] object-cover transition-transform duration-1000 group-hover:scale-[1.02]" alt="Sponsor" />
-               )}
-               <div className="absolute top-6 left-10"><span className="bg-slate-900/80 backdrop-blur-md text-white text-[9px] font-black uppercase tracking-[0.3em] px-4 py-1.5 rounded-full border border-white/20">Patrocinador Master</span></div>
-             </a>
-           </div>
+          <div className="bg-white p-2 rounded-[2.5rem] border border-slate-200 shadow-2xl overflow-hidden relative group">
+            <a href={master.link_destino || '#'} target="_blank">
+              {master.video_url ? (
+                <div className="relative aspect-[16/6] md:aspect-[21/6] w-full rounded-[2rem] overflow-hidden bg-slate-900">
+                  <video src={master.video_url} autoPlay loop muted playsInline className="w-full h-full object-cover opacity-90" />
+                  <div className="absolute top-4 right-4 bg-black/40 backdrop-blur-md p-2 rounded-full text-white/80"><Volume2 size={16} /></div>
+                </div>
+              ) : (
+                <img src={master.banner_url} className="w-full h-auto rounded-[2rem] object-cover transition-transform duration-1000 group-hover:scale-[1.02]" alt="Sponsor" />
+              )}
+              <div className="absolute top-6 left-10"><span className="bg-slate-900/80 backdrop-blur-md text-white text-[9px] font-black uppercase tracking-[0.3em] px-4 py-1.5 rounded-full border border-white/20">Patrocinador Master</span></div>
+            </a>
+          </div>
         </section>
       )}
 
@@ -237,45 +269,45 @@ export default function Home() {
           <p className="text-4xl md:text-5xl font-black text-slate-900 uppercase italic tracking-tighter">Abertas e Em Breve</p>
         </div>
         <div className="max-w-7xl mx-auto grid md:grid-cols-2 gap-8 lg:gap-12">
-            {/* FUTSAL CARD */}
-            <div className="bg-white border border-slate-200 p-8 md:p-10 rounded-[2.5rem] hover:shadow-2xl transition-all duration-300 relative overflow-hidden group">
-              <div className="absolute top-0 right-0 bg-blue-600 text-white px-6 py-2 rounded-bl-3xl font-black text-sm shadow-md italic z-20">
-                R$ {siteData?.preco_futsal || '150,00'}
-              </div>
-
-              <div className="flex justify-between items-start gap-4 mb-6">
-                <div><p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Modalidade</p><h3 className="text-3xl font-black text-slate-900 mt-1">{siteData?.titulo_futsal || 'Futsal'}</h3></div>
-                <span className={`text-[10px] font-black px-4 py-2 rounded-full uppercase tracking-wide ${futsalOpen ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{futsalOpen ? 'Inscrições abertas' : 'Em breve (reserva)'}</span>
-              </div>
-              <p className="text-slate-500 mb-8 font-medium leading-relaxed">{siteData?.desc_futsal || 'Sub-08 a Sub-16.'}</p>
-              <div className="space-y-3 pt-6 border-t border-slate-200">
-                <div className="flex items-center gap-3 text-sm font-bold text-slate-500"><div className="p-1.5 bg-slate-50 rounded-lg"><MapPin size={16} className="text-blue-600" /></div>{siteData?.local_futsal || 'Local a definir'}</div>
-                <div className="flex items-center gap-3 text-sm font-bold text-slate-500"><div className="p-1.5 bg-slate-50 rounded-lg"><Calendar size={16} className="text-blue-600" /></div>{siteData?.inicio_futsal || 'Início a definir'}</div>
-              </div>
-              <div className="mt-8 flex flex-col sm:flex-row gap-3">
-                {futsalOpen ? ( <Link href="/inscricao" className="flex-1"><button className="w-full bg-slate-900 text-white font-bold px-6 py-4 rounded-2xl hover:bg-blue-600 transition-all flex items-center justify-center gap-2">INSCREVER <ArrowRight size={18} /></button></Link> ) : ( <a className="flex-1" href={waLink(defs.whatsapp, defs.reserveMsg)} target="_blank"><button className="w-full bg-slate-900 text-white font-bold px-6 py-4 rounded-2xl hover:bg-blue-600 transition-all flex items-center justify-center gap-2">RESERVAR VAGA <ArrowRight size={18} /></button></a> )}
-              </div>
+          {/* FUTSAL CARD */}
+          <div className="bg-white border border-slate-200 p-8 md:p-10 rounded-[2.5rem] hover:shadow-2xl transition-all duration-300 relative overflow-hidden group">
+            <div className="absolute top-0 right-0 bg-blue-600 text-white px-6 py-2 rounded-bl-3xl font-black text-sm shadow-md italic z-20">
+              R$ {siteData?.preco_futsal || 'A Definir'}
             </div>
 
-            {/* SUICO CARD */}
-            <div className="bg-white border border-slate-200 p-8 md:p-10 rounded-[2.5rem] hover:shadow-2xl transition-all duration-300 relative overflow-hidden group">
-              <div className="absolute top-0 right-0 bg-green-600 text-white px-6 py-2 rounded-bl-3xl font-black text-sm shadow-md italic z-20">
-                R$ {siteData?.preco_society || '150,00'}
-              </div>
-
-              <div className="flex justify-between items-start gap-4 mb-6">
-                <div><p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Modalidade</p><h3 className="text-3xl font-black text-slate-900 mt-1">{siteData?.titulo_society || 'Suíço'}</h3></div>
-                <span className={`text-[10px] font-black px-4 py-2 rounded-full uppercase tracking-wide ${suicoOpen ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{suicoOpen ? 'Inscrições abertas' : 'Em breve (reserva)'}</span>
-              </div>
-              <p className="text-slate-500 mb-8 font-medium leading-relaxed">{siteData?.desc_society || 'Sub-08 a Sub-16.'}</p>
-              <div className="space-y-3 pt-6 border-t border-slate-200">
-                <div className="flex items-center gap-3 text-sm font-bold text-slate-500"><div className="p-1.5 bg-slate-50 rounded-lg"><MapPin size={16} className="text-green-600" /></div>{siteData?.local_society || 'Local a definir'}</div>
-                <div className="flex items-center gap-3 text-sm font-bold text-slate-500"><div className="p-1.5 bg-slate-50 rounded-lg"><Calendar size={16} className="text-green-600" /></div>{siteData?.inicio_society || 'Início a definir'}</div>
-              </div>
-              <div className="mt-8 flex flex-col sm:flex-row gap-3">
-                {suicoOpen ? ( <Link href="/inscricao" className="flex-1"><button className="w-full bg-slate-900 text-white font-bold px-6 py-4 rounded-2xl hover:bg-blue-600 transition-all flex items-center justify-center gap-2">INSCREVER <ArrowRight size={18} /></button></Link> ) : ( <a className="flex-1" href={waLink(defs.whatsapp, defs.reserveMsg)} target="_blank"><button className="w-full bg-slate-900 text-white font-bold px-6 py-4 rounded-2xl hover:bg-blue-600 transition-all flex items-center justify-center gap-2">RESERVAR VAGA <ArrowRight size={18} /></button></a> )}
-              </div>
+            <div className="flex justify-between items-start gap-4 mb-6">
+              <div><p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Modalidade</p><h3 className="text-3xl font-black text-slate-900 mt-1">{siteData?.titulo_futsal || 'Futsal'}</h3></div>
+              <span className={`text-[10px] font-black px-4 py-2 rounded-full uppercase tracking-wide ${futsalOpen ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{futsalOpen ? 'Inscrições abertas' : 'Em breve (reserva)'}</span>
             </div>
+            <p className="text-slate-500 mb-8 font-medium leading-relaxed">{siteData?.desc_futsal || 'Sub-08 a Sub-16.'}</p>
+            <div className="space-y-3 pt-6 border-t border-slate-200">
+              <div className="flex items-center gap-3 text-sm font-bold text-slate-500"><div className="p-1.5 bg-slate-50 rounded-lg"><MapPin size={16} className="text-blue-600" /></div>{siteData?.local_futsal || 'Local a definir'}</div>
+              <div className="flex items-center gap-3 text-sm font-bold text-slate-500"><div className="p-1.5 bg-slate-50 rounded-lg"><Calendar size={16} className="text-blue-600" /></div>{siteData?.inicio_futsal || 'Início a definir'}</div>
+            </div>
+            <div className="mt-8 flex flex-col sm:flex-row gap-3">
+              {futsalOpen ? ( <Link href="/inscricao" className="flex-1"><button className="w-full bg-slate-900 text-white font-bold px-6 py-4 rounded-2xl hover:bg-blue-600 transition-all flex items-center justify-center gap-2">INSCREVER <ArrowRight size={18} /></button></Link> ) : ( <a className="flex-1" href={waLink(defs.whatsapp, defs.reserveMsg)} target="_blank"><button className="w-full bg-slate-900 text-white font-bold px-6 py-4 rounded-2xl hover:bg-blue-600 transition-all flex items-center justify-center gap-2">RESERVAR VAGA <ArrowRight size={18} /></button></a> )}
+            </div>
+          </div>
+
+          {/* SUICO CARD */}
+          <div className="bg-white border border-slate-200 p-8 md:p-10 rounded-[2.5rem] hover:shadow-2xl transition-all duration-300 relative overflow-hidden group">
+            <div className="absolute top-0 right-0 bg-green-600 text-white px-6 py-2 rounded-bl-3xl font-black text-sm shadow-md italic z-20">
+              R$ {siteData?.preco_society || 'A Definir'}
+            </div>
+
+            <div className="flex justify-between items-start gap-4 mb-6">
+              <div><p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Modalidade</p><h3 className="text-3xl font-black text-slate-900 mt-1">{siteData?.titulo_society || 'Suíço'}</h3></div>
+              <span className={`text-[10px] font-black px-4 py-2 rounded-full uppercase tracking-wide ${suicoOpen ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{suicoOpen ? 'Inscrições abertas' : 'Em breve (reserva)'}</span>
+            </div>
+            <p className="text-slate-500 mb-8 font-medium leading-relaxed">{siteData?.desc_society || 'Sub-08 a Sub-16.'}</p>
+            <div className="space-y-3 pt-6 border-t border-slate-200">
+              <div className="flex items-center gap-3 text-sm font-bold text-slate-500"><div className="p-1.5 bg-slate-50 rounded-lg"><MapPin size={16} className="text-green-600" /></div>{siteData?.local_society || 'Local a definir'}</div>
+              <div className="flex items-center gap-3 text-sm font-bold text-slate-500"><div className="p-1.5 bg-slate-50 rounded-lg"><Calendar size={16} className="text-green-600" /></div>{siteData?.inicio_society || 'Início a definir'}</div>
+            </div>
+            <div className="mt-8 flex flex-col sm:flex-row gap-3">
+              {suicoOpen ? ( <Link href="/inscricao" className="flex-1"><button className="w-full bg-slate-900 text-white font-bold px-6 py-4 rounded-2xl hover:bg-blue-600 transition-all flex items-center justify-center gap-2">INSCREVER <ArrowRight size={18} /></button></Link> ) : ( <a className="flex-1" href={waLink(defs.whatsapp, defs.reserveMsg)} target="_blank"><button className="w-full bg-slate-900 text-white font-bold px-6 py-4 rounded-2xl hover:bg-blue-600 transition-all flex items-center justify-center gap-2">RESERVAR VAGA <ArrowRight size={18} /></button></a> )}
+            </div>
+          </div>
         </div>
       </section>
 
@@ -307,21 +339,41 @@ export default function Home() {
         </div>
       </section>
 
-      {/* APOIADORES (RODAPÉ PREMIUM) */}
-      {apoiadores.length > 0 && (
-        <section className="py-20 bg-slate-50 border-t border-slate-200 text-center">
-           <div className="max-w-7xl mx-auto px-6">
-             <p className="text-[10px] font-black uppercase text-slate-400 tracking-[0.4em] mb-12">Apoio Institucional e Realização</p>
-             <div className="flex flex-wrap justify-center items-center gap-10 md:gap-20 opacity-60 grayscale hover:grayscale-0 transition-all duration-700">
-               {apoiadores.map(p => (
-                 <a key={p.id} href={p.link_destino || '#'} target="_blank" className="hover:scale-110 transition-transform">
-                   <img src={p.banner_url} alt={p.nome_empresa} className="h-10 md:h-14 w-auto object-contain" />
-                 </a>
-               ))}
-             </div>
-           </div>
-        </section>
-      )}
+{/* APOIADORES (RODAPÉ PREMIUM) */}
+{apoiadores.length > 0 && (
+  <section className="py-20 bg-slate-50 border-t border-slate-200 text-center">
+    <div className="max-w-7xl mx-auto px-6">
+      <p className="text-[10px] font-black uppercase text-slate-500 tracking-[0.4em] mb-12">
+        Apoio Institucional e Realização
+      </p>
+
+      <div className="flex flex-wrap justify-center items-center gap-10 md:gap-20">
+        {apoiadores.map(p => (
+          <a
+            key={p.id}
+            href={p.link_destino || '#'}
+            target="_blank"
+            rel="noreferrer"
+            className="group hover:scale-110 transition-transform"
+            title={p.nome_empresa}
+          >
+            <img
+              src={p.banner_url}
+              alt={p.nome_empresa}
+              className="
+                h-12 md:h-16 w-auto object-contain
+                opacity-90 saturate-125
+                transition-all duration-300
+                group-hover:opacity-100 group-hover:saturate-150
+                drop-shadow-sm group-hover:drop-shadow-md
+              "
+            />
+          </a>
+        ))}
+      </div>
+    </div>
+  </section>
+)}
 
       {/* FOOTER */}
       <footer className="bg-slate-900 text-white py-20 px-6 md:px-12 border-t border-slate-800">
@@ -343,19 +395,19 @@ export default function Home() {
 
             {/* CRÉDITOS RC ENTERPRISE */}
             <div className="flex items-center gap-3 bg-white/5 px-4 py-2.5 rounded-xl border border-white/5 group hover:border-blue-600/50 transition-all duration-500 mt-4">
-                <div className="w-7 h-7 rounded bg-blue-600/10 flex items-center justify-center">
-                    <Code size={14} className="text-blue-500 group-hover:scale-110 transition-transform" />
-                </div>
-                <div className="leading-tight">
-                    <span className="text-[8px] font-black text-slate-500 block uppercase tracking-widest">Powered by</span>
-                    <a 
-                      href="https://wa.me/5547997037512" 
-                      target="_blank" 
-                      className="text-[10px] font-black text-white uppercase italic tracking-tighter hover:text-blue-400 transition-colors"
-                    >
-                      RC <span className="text-blue-600">ENTERPRISE</span>
-                    </a>
-                </div>
+              <div className="w-7 h-7 rounded bg-blue-600/10 flex items-center justify-center">
+                <Code size={14} className="text-blue-500 group-hover:scale-110 transition-transform" />
+              </div>
+              <div className="leading-tight">
+                <span className="text-[8px] font-black text-slate-500 block uppercase tracking-widest">Powered by</span>
+                <a
+                  href="https://wa.me/5547997037512"
+                  target="_blank"
+                  className="text-[10px] font-black text-white uppercase italic tracking-tighter hover:text-blue-400 transition-colors"
+                >
+                  RC <span className="text-blue-600">ENTERPRISE</span>
+                </a>
+              </div>
             </div>
 
           </div>

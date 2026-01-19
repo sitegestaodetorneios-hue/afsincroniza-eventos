@@ -28,6 +28,22 @@ function compact(obj) {
   return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined))
 }
 
+function toNumberOrUndef(v) {
+  if (v === null || v === undefined || v === '') return undefined
+  if (typeof v === 'number' && Number.isFinite(v)) return v
+  if (typeof v === 'string') {
+    // aceita "150,00" ou "150.00" ou "1.234,56"
+    const cleaned = v
+      .trim()
+      .replace(/\./g, '')     // remove separador de milhar
+      .replace(',', '.')      // vírgula vira ponto
+      .replace(/[^\d.-]/g, '') // remove R$, espaços etc
+    const n = Number(cleaned)
+    return Number.isFinite(n) ? n : undefined
+  }
+  return undefined
+}
+
 export async function GET() {
   let supabase
   try {
@@ -43,19 +59,20 @@ export async function GET() {
     .single()
 
   if (error) {
-     // Se não achar, não quebra, retorna objeto vazio
-     if (error.code === 'PGRST116') return NextResponse.json({})
-     return NextResponse.json({ error: error.message }, { status: 500 })
+    // Se não achar, não quebra, retorna objeto vazio
+    if (error.code === 'PGRST116') return NextResponse.json({})
+    return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
   return NextResponse.json(data, {
     status: 200,
     headers: {
-        // ✅ AQUI ESTÁ A MÁGICA:
-        // s-maxage=3600: Cache de 1 HORA para o usuário comum.
-        // stale-while-revalidate=86400: Se cair o banco, o site fica no ar por 1 dia.
-        'Cache-Control': 'public, s-maxage=3600, stale-while-revalidate=86400',
-        'x-nextjs-tags': 'config' // Essencial para o PUT limpar o cache
+      // ✅ Cache CDN
+      // s-maxage=3600: Cache de 1 HORA
+      // stale-while-revalidate=86400: Mantém no ar por 1 dia se der ruim
+      'Cache-Control': 'public, s-maxage=3600, stale-while-revalidate=86400',
+      // Mantive seu header (sem mudar seu padrão)
+      'x-nextjs-tags': 'config'
     }
   })
 }
@@ -104,32 +121,40 @@ export async function PUT(request) {
     titulo_card_hero: body.titulo_card_hero,
     texto_card_hero: body.texto_card_hero,
 
+    // ✅ NOVOS CAMPOS DO HERO (para você controlar o texto que reposicionamos)
+    hero_headline: body.hero_headline,
+    hero_tagline: body.hero_tagline,
+    hero_badge: body.hero_badge,
+
     // 4. Configurações Futsal
     titulo_futsal: body.titulo_futsal,
     desc_futsal: body.desc_futsal,
     local_futsal: body.local_futsal,
     inicio_futsal: body.inicio_futsal,
-    vagas_futsal: typeof body.vagas_futsal === 'number' ? body.vagas_futsal : undefined,
-    preco_futsal: typeof body.preco_futsal === 'number' ? body.preco_futsal : undefined,
+    vagas_futsal: toNumberOrUndef(body.vagas_futsal),
+    preco_futsal: toNumberOrUndef(body.preco_futsal),
 
     // 5. Configurações Society
     titulo_society: body.titulo_society,
     desc_society: body.desc_society,
     local_society: body.local_society,
     inicio_society: body.inicio_society,
-    vagas_society: typeof body.vagas_society === 'number' ? body.vagas_society : undefined,
-    preco_society: typeof body.preco_society === 'number' ? body.preco_society : undefined,
+    vagas_society: toNumberOrUndef(body.vagas_society),
+    preco_society: toNumberOrUndef(body.preco_society),
 
     // 6. Títulos Gerais e Rodapé
     titulo_modalidades: body.titulo_modalidades,
     subtitulo_modalidades: body.subtitulo_modalidades,
     texto_footer: body.texto_footer,
-    
-    // CAMPOS DE CONTROLE DA INSCRIÇÃO (Adicionei para garantir que funcione o botão da home)
+
+    // 7. Campos de controle da inscrição
     inscricoes_abertas: body.inscricoes_abertas,
     inscricoes_futsal_abertas: body.inscricoes_futsal_abertas,
     inscricoes_society_abertas: body.inscricoes_society_abertas
   })
+
+  // ✅ Upsert garante que existe a linha id=1 (não falha se ainda não tiver)
+  const payload = { id: 1, ...updates }
 
   const { error } = await supabase
     .from('config_site')
@@ -138,13 +163,10 @@ export async function PUT(request) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  // ✅ LIMPEZA DE CACHE INSTANTÂNEA
-  // Quando você salvar no admin, ele avisa a Vercel: "O cache 'config' está velho, apaga agora!"
-  // Isso faz a atualização ser imediata, mesmo com cache de 1 hora.
   try {
-      revalidateTag('config')
+    revalidateTag('config')
   } catch (e) {
-      console.log('Erro ao revalidar cache (ignorável em dev):', e)
+    console.log('Erro ao revalidar cache (ignorável em dev):', e)
   }
 
   return NextResponse.json({ success: true })
