@@ -1,3 +1,16 @@
 @import "tailwindcss";
 
-/* Isso remove os erros do VS Code e ativa o motor do Tailwind v4 */
+html, body {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+/* evita o layout shift da scrollbar */
+html {
+  scrollbar-gutter: stable both-edges;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}

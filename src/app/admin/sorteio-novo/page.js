@@ -893,7 +893,7 @@ function SorteioContent() {
 
   return (
     <FullscreenPortal>
-      <main className="fixed inset-0 w-screen overflow-x-hidden bg-[#0F172A] text-white p-4 font-sans overflow-hidden bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-blue-900/20 via-[#0F172A] to-[#020617] z-[9999]">
+      <main className="fixed inset-0 w-screen overflow-hidden bg-[#0F172A] text-white p-4 font-sans bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-blue-900/20 via-[#0F172A] to-[#020617] z-[9999]">
           <div className="w-full max-w-[1600px] mx-auto h-full flex flex-col min-w-0">
           <div className="flex justify-between items-center mb-4 border-b border-white/5 pb-4">
             <button onClick={() => router.back()} className="text-slate-500 hover:text-white uppercase text-xs font-bold flex items-center gap-1">
