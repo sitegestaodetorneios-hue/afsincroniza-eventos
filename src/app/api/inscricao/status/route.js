@@ -15,7 +15,7 @@ export async function GET() {
     // 1. Busca as configurações de vagas na tabela config_site (gerenciada pelo Admin)
     const { data: config } = await supabase
       .from('config_site')
-      .select('vagas_futsal, vagas_society')
+      .select('vagas_futsal, vagas_suiço')
       .eq('id', 1)
       .single()
     

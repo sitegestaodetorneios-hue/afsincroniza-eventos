@@ -27,7 +27,7 @@ export default function Inscricao() {
   })
   const [siteConfigs, setSiteConfigs] = useState({
     titulo_futsal: 'Carregando...', desc_futsal: '...',
-    titulo_suiço: 'Carregando...', desc_society: '...'
+    titulo_society: 'Carregando...', desc_society: '...'
   })
   
   const [form, setForm] = useState({
