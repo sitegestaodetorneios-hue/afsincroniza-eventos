@@ -437,7 +437,7 @@ function BlazeRoulette({ items, onSpinEnd, vencedorParaGirar, patrocinadores, sf
 
       <div
         ref={containerRef}
-        className="w-full max-w-[1200px] h-[240px] bg-[#0f172a] border-y-[4px] border-slate-700 relative overflow-hidden shadow-2xl flex items-center rounded-2xl mx-auto"
+        className="w-[min(1200px,calc(100vw-32px))] h-[240px] bg-[#0f172a] border-y-[4px] border-slate-700 relative overflow-hidden shadow-2xl flex items-center rounded-2xl mx-auto"
       >
         <motion.div
           key={resetIndex}
@@ -506,19 +506,30 @@ function SorteioContent() {
   const voice = useVoice()
   // ✅ B) trava o body e compensa a scrollbar (resolve o empurrão pra direita)
   useEffect(() => {
-    const prevOverflow = document.body.style.overflow
-    const prevPaddingRight = document.body.style.paddingRight
+  const prevBodyOverflow = document.body.style.overflow
+  const prevBodyPaddingRight = document.body.style.paddingRight
 
-    const sbw = window.innerWidth - document.documentElement.clientWidth
-    document.body.style.overflow = 'hidden'
-    if (sbw > 0) document.body.style.paddingRight = `${sbw}px`
+  const prevHtmlOverflowX = document.documentElement.style.overflowX
+  const prevHtmlOverflow = document.documentElement.style.overflow
 
-    return () => {
-      document.body.style.overflow = prevOverflow
-      document.body.style.paddingRight = prevPaddingRight
-    }
-  }, [])
-  function getDescricaoModo() {
+  const sbw = window.innerWidth - document.documentElement.clientWidth
+
+  // trava scroll e overflow horizontal no html também
+  document.documentElement.style.overflowX = 'hidden'
+  document.documentElement.style.overflow = 'hidden'
+  document.body.style.overflow = 'hidden'
+
+  if (sbw > 0) document.body.style.paddingRight = `${sbw}px`
+
+  return () => {
+    document.body.style.overflow = prevBodyOverflow
+    document.body.style.paddingRight = prevBodyPaddingRight
+
+    document.documentElement.style.overflowX = prevHtmlOverflowX
+    document.documentElement.style.overflow = prevHtmlOverflow
+  }
+}, [])
+function getDescricaoModo() {
     if (estiloGrupo === 'INTRA_GRUPO' || estiloGrupo === 'TODOS_CONTRA_TODOS') return "Todos contra Todos (Dentro do Grupo)"
     if (estiloGrupo === 'IDA_E_VOLTA') return "Ida e Volta (Revanche)"
     if (estiloGrupo === 'CRUZAMENTO' || estiloGrupo === 'INTER_GRUPO_TOTAL') return "Cruzamento Total: Todos do A contra Todos do B"
@@ -531,6 +542,33 @@ function SorteioContent() {
   useEffect(() => {
     sfxRef.current = createSfx()
   }, [])
+  // ✅ FIX DEFINITIVO: nunca deixar a tela “scrollada” pra direita
+  const resetViewport = () => {
+    try {
+      // scroll do documento
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+      document.documentElement.scrollLeft = 0
+      document.body.scrollLeft = 0
+
+      // alguns browsers guardam scroll no próprio body quando tem portal
+      if (document.scrollingElement) document.scrollingElement.scrollLeft = 0
+    } catch {}
+  }
+
+  // roda ao montar
+  useEffect(() => {
+    resetViewport()
+  }, [])
+
+  // roda quando muda a fase (é aqui que normalmente “pula”)
+  useEffect(() => {
+    resetViewport()
+    // reforços após render/layout
+    const t1 = setTimeout(resetViewport, 0)
+    const t2 = setTimeout(resetViewport, 50)
+    const t3 = setTimeout(resetViewport, 150)
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3) }
+  }, [fase])
 
   // carregar dados
   useEffect(() => {
@@ -629,9 +667,14 @@ function SorteioContent() {
 
   const prepararShow = async () => {
     await narrarInicio()
+    resetViewport()
     setPoteSorteio([...selecionadas])
     setFase('sorteio')
+    // reforço logo após mudar
+    setTimeout(resetViewport, 0)
+    setTimeout(resetViewport, 80)
   }
+
 
   const sortearProximo = async () => {
     if (poteSorteio.length === 0 || sorteando) return
