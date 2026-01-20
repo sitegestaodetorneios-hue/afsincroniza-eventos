@@ -442,7 +442,7 @@ function BlazeRoulette({ items, onSpinEnd, vencedorParaGirar, patrocinadores, sf
         <motion.div
           key={resetIndex}
           animate={controls}
-          className="flex items-center"
+          className="flex items-center min-w-0"
           style={{ display: 'flex', gap: `${CARD_GAP}px` }}
         >
           {faixa.map((item, i) => (
@@ -893,8 +893,8 @@ function SorteioContent() {
 
   return (
     <FullscreenPortal>
-      <main className="fixed left-0 top-0 w-screen h-screen bg-[#0F172A] text-white p-4 font-sans overflow-hidden bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-blue-900/20 via-[#0F172A] to-[#020617] z-[9999]">
-        <div className="w-full max-w-[1600px] mx-auto h-full flex flex-col">
+      <main className="fixed inset-0 w-screen overflow-x-hidden bg-[#0F172A] text-white p-4 font-sans overflow-hidden bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-blue-900/20 via-[#0F172A] to-[#020617] z-[9999]">
+          <div className="w-full max-w-[1600px] mx-auto h-full flex flex-col min-w-0">
           <div className="flex justify-between items-center mb-4 border-b border-white/5 pb-4">
             <button onClick={() => router.back()} className="text-slate-500 hover:text-white uppercase text-xs font-bold flex items-center gap-1">
               <ChevronLeft size={14} /> Cancelar
@@ -981,7 +981,7 @@ function SorteioContent() {
           )}
 
           {fase === 'sorteio' && (
-            <div className="grid grid-rows-[auto_1fr] h-full gap-4 w-full">
+              <div className="grid grid-rows-[auto_1fr] h-full gap-4 w-full min-w-0">
               <div className="flex flex-col items-center justify-center min-h-[350px] w-full">
                 <SponsorsTicker patrocinadores={patrocinadores} />
 
@@ -1007,7 +1007,7 @@ function SorteioContent() {
                 </div>
               </div>
 
-              <div className={`w-full max-w-[1600px] mx-auto grid gap-4 items-start overflow-y-auto pb-10 px-1 overflow-x-hidden ${
+              <div className={`grid gap-4 w-full min-w-0 items-start overflow-y-auto pb-10 mx-auto ${
                 qtdGrupos === 2 ? 'grid-cols-2' : qtdGrupos === 3 ? 'grid-cols-3' : 'grid-cols-2 lg:grid-cols-4'
               }`}>
                 {Array.from({ length: qtdGrupos }).map((_, idx) => (

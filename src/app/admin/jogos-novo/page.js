@@ -1089,7 +1089,7 @@ function GameCard({ jogo, onUpdate, pin, allTeams }) {
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-2 truncate">
                 <div className="w-5 h-5 flex items-center justify-center bg-slate-50 rounded-full border border-slate-100 overflow-hidden">
-                  {jogo.equipeA?.logo_url ? <img src={jogo.equipeA.logo_url} className="w-full h-full object-contain" /> : <Shield size={10} className="text-slate-300" />}
+                  {jogo.equipeA?.scudo_url ? <img src={jogo.equipeA.scudo_url} className="w-full h-full object-contain" /> : <Shield size={10} className="text-slate-300" />}
                 </div>
                 <span className="font-bold text-sm text-slate-800 truncate">{nomeA}</span>
               </div>
@@ -1106,7 +1106,7 @@ function GameCard({ jogo, onUpdate, pin, allTeams }) {
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-2 truncate">
                 <div className="w-5 h-5 flex items-center justify-center bg-slate-50 rounded-full border border-slate-100 overflow-hidden">
-                  {!isFolga && jogo.equipeB?.logo_url ? <img src={jogo.equipeB.logo_url} className="w-full h-full object-contain" /> : <Shield size={10} className="text-slate-300" />}
+                  {!isFolga && jogo.equipeB?.scudo_url ? <img src={jogo.equipeB.scudo_url} className="w-full h-full object-contain" /> : <Shield size={10} className="text-slate-300" />}
                 </div>
                 <span className={`font-bold text-sm truncate ${isFolga ? 'text-amber-700' : 'text-slate-800'}`}>
                   {nomeB}
