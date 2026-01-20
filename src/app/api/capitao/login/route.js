@@ -46,37 +46,36 @@ export async function POST(request) {
 
   const { data: equipe, error } = await supabase
     .from('equipes')
-    .select('id, nome_equipe, cidade, nome_capitao, whatsapp, email, pago, created_at, senha_hash, senha, termo_url, termo_assinado, modalidade')
+    .select(
+      'id, nome_equipe, cidade, nome_capitao, whatsapp, email, pago, created_at, senha_hash, senha, termo_url, termo_assinado, modalidade, escudo_url, foto_equipe_url'
+    )
     .eq('email', email)
     .maybeSingle()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   if (!equipe) return NextResponse.json({ error: 'E-mail ou senha incorretos.' }, { status: 401 })
 
-  let senhaValida = false;
+  let senhaValida = false
 
-  // LÓGICA DE SENHA AJUSTADA:
-  // 1. Tenta comparar como texto puro primeiro (para os registros que acabamos de fazer)
+  // 1) texto puro (migração)
   if (equipe.senha_hash === senha || equipe.senha === senha) {
-    senhaValida = true;
-    
-    // Opcional: Se logou com texto puro, vamos gerar o hash agora para segurança futura
-    const newHash = await bcrypt.hash(senha, 10);
-    await supabase.from('equipes').update({ senha_hash: newHash }).eq('id', equipe.id);
-  } 
-  // 2. Se não for texto puro, tenta comparar usando bcrypt (para registros antigos ou já convertidos)
-  else if (equipe.senha_hash && equipe.senha_hash.startsWith('$2')) {
-    senhaValida = await bcrypt.compare(senha, equipe.senha_hash);
+    senhaValida = true
+    const newHash = await bcrypt.hash(senha, 10)
+    await supabase.from('equipes').update({ senha_hash: newHash }).eq('id', equipe.id)
+  }
+  // 2) bcrypt
+  else if (equipe.senha_hash && String(equipe.senha_hash).startsWith('$2')) {
+    senhaValida = await bcrypt.compare(senha, equipe.senha_hash)
   }
 
   if (!senhaValida) {
     return NextResponse.json({ error: 'E-mail ou senha incorretos.' }, { status: 401 })
   }
 
-  // GERAÇÃO DE SESSÃO
+  // sessão
   const session = signSession({
     equipe_id: equipe.id,
-    exp: Date.now() + 1000 * 60 * 60 * 24 * 7, 
+    exp: Date.now() + 1000 * 60 * 60 * 24 * 7,
   })
 
   const safe = {
@@ -90,7 +89,11 @@ export async function POST(request) {
     created_at: equipe.created_at,
     termo_url: equipe.termo_url,
     termo_assinado: Boolean(equipe.termo_assinado),
-    modalidade: equipe.modalidade
+    modalidade: equipe.modalidade,
+
+    // ✅ NOVOS CAMPOS PARA O PAINEL
+    escudo_url: equipe.escudo_url || '',
+    foto_equipe_url: equipe.foto_equipe_url || '',
   }
 
   const res = NextResponse.json({ ok: true, equipe: safe })
@@ -101,6 +104,6 @@ export async function POST(request) {
     path: '/',
     maxAge: 60 * 60 * 24 * 7,
   })
-  
+
   return res
 }
