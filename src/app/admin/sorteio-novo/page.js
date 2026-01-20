@@ -375,12 +375,10 @@ function BlazeRoulette({ items, onSpinEnd, vencedorParaGirar, patrocinadores, sf
     if (items.length > 0 && faixa.length === 0) {
       setFaixa(items.slice(0, 15))
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items.length])
 
   useEffect(() => {
     if (vencedorParaGirar) girarRoleta(vencedorParaGirar)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vencedorParaGirar])
 
   const girarRoleta = async (target) => {
@@ -398,14 +396,8 @@ function BlazeRoulette({ items, onSpinEnd, vencedorParaGirar, patrocinadores, sf
       do {
         randomItem = items[Math.floor(Math.random() * items.length)]
       } while (randomItem?.id === lastAdded && items.length > 1)
-
       fillers.push(randomItem)
       lastAdded = randomItem?.id
-    }
-
-    if (fillers[fillers.length - 1]?.id === target.id && items.length > 1) {
-      const replacement = items.find(t => t.id !== target.id) || fillers[fillers.length - 1]
-      fillers[fillers.length - 1] = replacement
     }
 
     const novaFaixa = [startItem, ...fillers, targetItem, ...items.slice(0, 3)]
@@ -414,8 +406,11 @@ function BlazeRoulette({ items, onSpinEnd, vencedorParaGirar, patrocinadores, sf
 
     const targetIndex = 51
     const distToTargetStart = targetIndex * (CARD_WIDTH + CARD_GAP)
-    const containerWidth = containerRef.current ? containerRef.current.offsetWidth : 1200
-    const stopPosition = -(distToTargetStart) + (containerWidth / 2) - (CARD_WIDTH / 2)
+    
+    // ✅ O PULO DO GATO: Usa a largura real da janela (viewport) 
+    // para centralizar, ignorando se o elemento pai está torto.
+    const viewportWidth = window.innerWidth
+    const stopPosition = -(distToTargetStart) + (viewportWidth / 2) - (CARD_WIDTH / 2)
 
     setTimeout(async () => {
       await controls.start({ x: 0, transition: { duration: 0 } })
@@ -429,15 +424,19 @@ function BlazeRoulette({ items, onSpinEnd, vencedorParaGirar, patrocinadores, sf
   }
 
   return (
-    <div className="flex flex-col items-center w-full relative my-4">
-      <div className="absolute z-30 left-1/2 -translate-x-1/2 -top-4">
-        <div className="w-0 h-0 border-l-[20px] border-l-transparent border-r-[20px] border-r-transparent border-t-[30px] border-t-yellow-400 drop-shadow-[0_4px_4px_rgba(0,0,0,0.5)]" />
+    <div className="flex flex-col items-center w-screen relative my-4 left-1/2 -translate-x-1/2">
+      {/* Marcador Central */}
+      <div className="absolute z-50 left-1/2 -translate-x-1/2 -top-4">
+        <div className="w-0 h-0 border-l-[20px] border-l-transparent border-r-[20px] border-r-transparent border-t-[30px] border-t-yellow-400 drop-shadow-[0_4px_10px_rgba(0,0,0,0.5)]" />
       </div>
-      <div className="absolute z-20 top-0 bottom-0 left-1/2 w-[2px] bg-yellow-500/30 h-full" />
+      
+      {/* Linha de centro */}
+      <div className="absolute z-40 top-0 bottom-0 left-1/2 -translate-x-1/2 w-[2px] bg-yellow-500/20 h-full" />
 
+      {/* Container da Roleta - Forçado a ocupar a largura total da tela */}
       <div
         ref={containerRef}
-        className="w-[min(1200px,calc(100vw-32px))] h-[240px] bg-[#0f172a] border-y-[4px] border-slate-700 relative overflow-hidden shadow-2xl flex items-center rounded-2xl mx-auto"
+        className="w-full h-[240px] bg-[#0f172a] border-y-[4px] border-slate-700 relative overflow-hidden shadow-2xl flex items-center"
       >
         <motion.div
           key={resetIndex}
@@ -446,11 +445,10 @@ function BlazeRoulette({ items, onSpinEnd, vencedorParaGirar, patrocinadores, sf
           style={{ display: 'flex', gap: `${CARD_GAP}px` }}
         >
           {faixa.map((item, i) => (
-            <div key={`${item.id}-${i}`} className="shrink-0 relative" style={{ width: CARD_WIDTH, height: 170 }}>
+            <div key={`${item.id}-${i}`} className="shrink-0" style={{ width: CARD_WIDTH, height: 170 }}>
               <div className="w-full h-full rounded-2xl flex flex-col items-center justify-between p-3 text-center bg-gradient-to-b from-slate-800 to-slate-950 border-2 border-slate-700 shadow-xl relative overflow-hidden group">
                 <div className="flex-1 flex items-center justify-center w-full">
                   <div className="w-24 h-24 bg-slate-900 rounded-full flex items-center justify-center border-2 border-white/5 shadow-inner group-hover:scale-110 transition-transform duration-500 overflow-hidden">
-                    {/* ✅ LOGO DO TIME (escudo_url -> logo_url) */}
                     {item.logo_url ? (
                       <img src={item.logo_url} className="w-16 h-16 object-contain" alt={item.nome_equipe} />
                     ) : (
@@ -458,7 +456,6 @@ function BlazeRoulette({ items, onSpinEnd, vencedorParaGirar, patrocinadores, sf
                     )}
                   </div>
                 </div>
-
                 <div className="mb-2 w-full">
                   <span className="text-sm font-black uppercase text-white leading-tight line-clamp-2 px-1 drop-shadow-md">
                     {item.nome_equipe}
@@ -469,8 +466,9 @@ function BlazeRoulette({ items, onSpinEnd, vencedorParaGirar, patrocinadores, sf
           ))}
         </motion.div>
 
-        <div className="absolute inset-y-0 left-0 w-48 bg-gradient-to-r from-[#0F172A] via-[#0F172A]/80 to-transparent z-10 pointer-events-none" />
-        <div className="absolute inset-y-0 right-0 w-48 bg-gradient-to-l from-[#0F172A] via-[#0F172A]/80 to-transparent z-10 pointer-events-none" />
+        {/* Sombras laterais */}
+        <div className="absolute inset-y-0 left-0 w-1/4 bg-gradient-to-r from-[#0F172A] via-[#0F172A]/80 to-transparent z-10 pointer-events-none" />
+        <div className="absolute inset-y-0 right-0 w-1/4 bg-gradient-to-l from-[#0F172A] via-[#0F172A]/80 to-transparent z-10 pointer-events-none" />
       </div>
     </div>
   )
@@ -949,7 +947,7 @@ function getDescricaoModo() {
 
   return (
     <FullscreenPortal>
-      <main className="fixed inset-0 overflow-hidden bg-[#0F172A] text-white p-4 font-sans bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-blue-900/20 via-[#0F172A] to-[#020617] z-[9999]">
+      <main className="fixed inset-0 overflow-hidden bg-[#0F172A] text-white p-4 font-sans bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-blue-900/20 via-[#0F172A] to-[#020617] z-[9999] flex flex-col items-center">
           <div className="w-full max-w-[1600px] mx-auto h-full flex flex-col min-w-0">
           <div className="flex justify-between items-center mb-4 border-b border-white/5 pb-4">
             <button onClick={() => router.back()} className="text-slate-500 hover:text-white uppercase text-xs font-bold flex items-center gap-1">
