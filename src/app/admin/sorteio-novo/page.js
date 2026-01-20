@@ -43,6 +43,7 @@ function createSfx() {
     if (!c) return
     const now = c.currentTime
 
+    // “Rumble” (base)
     const osc = c.createOscillator()
     const gain = c.createGain()
     const filter = c.createBiquadFilter()
@@ -64,6 +65,7 @@ function createSfx() {
     osc.start(now)
     osc.stop(now + GIRO_DURATION)
 
+    // “ticks” leves durante o giro
     const tickCount = 12
     for (let i = 0; i < tickCount; i++) {
       const t = now + (GIRO_DURATION * (i / tickCount))
@@ -83,7 +85,7 @@ function createSfx() {
     const c = await ensureCtx()
     if (!c) return
     const now = c.currentTime
-    const notes = [392.0, 523.25, 659.25, 783.99]
+    const notes = [392.0, 523.25, 659.25, 783.99] // “crescendo” agradável
 
     notes.forEach((freq, i) => {
       const osc = c.createOscillator()
@@ -100,6 +102,7 @@ function createSfx() {
       osc.stop(start + 1.0)
     })
 
+    // “boom” suave
     const boomOsc = c.createOscillator()
     const boomGain = c.createGain()
     const boomFilter = c.createBiquadFilter()
@@ -122,7 +125,7 @@ function createSfx() {
 }
 
 // ============================================================
-// ✅ VOZ (TTS) — Força Microsoft Daniel pt-BR + modo “narrador”
+// ✅ VOZ (TTS) — narrador esportivo (mais natural, menos robô)
 // ============================================================
 function useVoice() {
   const enabledRef = useRef(true)
@@ -130,63 +133,43 @@ function useVoice() {
 
   const norm = (s) => (s || '').toLowerCase()
 
-  const pickBestMalePt = () => {
+  const pickBestPt = () => {
     if (typeof window === 'undefined') return null
     const voices = window.speechSynthesis?.getVoices?.() || []
     if (!voices.length) return null
 
     const isPtBR = (v) => norm(v.lang).includes('pt-br')
-    const isPt = (v) => norm(v.lang).includes('pt')
 
-    const danielMS = voices.find(v =>
-      isPtBR(v) &&
-      norm(v.name).includes('microsoft') &&
-      norm(v.name).includes('daniel')
-    )
-    if (danielMS) return danielMS
-
-    const danielAny = voices.find(v => isPtBR(v) && norm(v.name).includes('daniel'))
-    if (danielAny) return danielAny
-
-    const looksMale = (v) => {
-      const n = norm(v.name)
-      return (
-        n.includes('male') ||
-        n.includes('mascul') ||
-        n.includes('homem') ||
-        n.includes('antonio') ||
-        n.includes('daniel') ||
-        n.includes('ricardo') ||
-        n.includes('paulo') ||
-        n.includes('joao') ||
-        n.includes('bruno')
-      )
-    }
-
-    const preferOrder = (arr) => {
-      const ms = arr.filter(v => norm(v.name).includes('microsoft'))
-      const google = arr.filter(v => norm(v.name).includes('google'))
-      const any = arr
-      const pick = (list) => list.find(looksMale) || list[0] || null
-      return pick(ms) || pick(google) || pick(any)
-    }
-
+    // ✅ prioridade: pt-BR
     const br = voices.filter(isPtBR)
-    const pt = voices.filter(isPt)
 
-    return preferOrder(br) || preferOrder(pt) || preferOrder(voices)
+    // tenta vozes mais “naturais” primeiro (geralmente Google / Neural quando disponível)
+    const prefer = (arr) => {
+      const google = arr.find(v => norm(v.name).includes('google'))
+      if (google) return google
+
+      const msDaniel = arr.find(v => norm(v.name).includes('microsoft') && norm(v.name).includes('daniel'))
+      if (msDaniel) return msDaniel
+
+      const anyDaniel = arr.find(v => norm(v.name).includes('daniel'))
+      if (anyDaniel) return anyDaniel
+
+      return arr[0] || null
+    }
+
+    return prefer(br) || prefer(voices) || null
   }
 
   useEffect(() => {
     if (typeof window === 'undefined') return
     const load = () => {
-      const v = pickBestMalePt()
+      const v = pickBestPt()
       if (v) voiceRef.current = v
     }
     window.speechSynthesis.onvoiceschanged = load
     const t1 = setTimeout(load, 120)
     const t2 = setTimeout(load, 600)
-    const t3 = setTimeout(load, 1300)
+    const t3 = setTimeout(load, 1200)
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3) }
   }, [])
 
@@ -195,27 +178,7 @@ function useVoice() {
   const clamp = (n, a, b) => Math.max(a, Math.min(b, n))
   const rand = (a, b) => a + Math.random() * (b - a)
 
-  // quebra mais “natural”: por pontuação primeiro, depois por tamanho
-  const splitNatural = (text) => {
-    const t = String(text || '').trim()
-    if (!t) return []
-    const parts = t
-      .split(/(?<=[.!?…])\s+/)
-      .map(s => s.trim())
-      .filter(Boolean)
-
-    const out = []
-    for (const p of parts) {
-      if (p.split(/\s+/).length <= 10) out.push(p)
-      else {
-        const w = p.split(/\s+/).filter(Boolean)
-        for (let i = 0; i < w.length; i += 8) out.push(w.slice(i, i + 8).join(' '))
-      }
-    }
-    return out
-  }
-
-  // ✅ narrador com emoção (varia rate/pitch e respeita frases)
+  // ✅ fala “narrador” com pausas naturais (sem vibrato robótico)
   const speakNarrador = (text, opts = {}) => {
     if (typeof window === 'undefined') return
     if (!enabledRef.current) return
@@ -224,33 +187,34 @@ function useVoice() {
     try {
       window.speechSynthesis.cancel()
 
-      const baseRate = opts.rate ?? 1.08
-      const basePitch = opts.pitch ?? 0.80
+      const baseRate = opts.rate ?? 1.12
+      const basePitch = opts.pitch ?? 0.78
       const volume = opts.volume ?? 1.0
+      const pauseMs = opts.pauseMs ?? 110
 
-      const vibratoDepth = opts.vibratoDepth ?? 0.07
-      const vibratoSpeed = opts.vibratoSpeed ?? 0.85
+      // quebra por pontuação pra ficar natural
+      const parts = String(text)
+        .replace(/\s+/g, ' ')
+        .trim()
+        .split(/(?<=[.!?…])\s+/)
+        .filter(Boolean)
 
-      const chunks = splitNatural(text)
-      let idx = 0
-
+      let i = 0
       const speakNext = () => {
-        if (idx >= chunks.length) return
+        if (i >= parts.length) return
 
-        const u = new SpeechSynthesisUtterance(chunks[idx])
+        const u = new SpeechSynthesisUtterance(parts[i])
         u.lang = 'pt-BR'
         u.voice = voiceRef.current || null
 
-        const vib = Math.sin(idx * vibratoSpeed) * vibratoDepth
-        const excitement = Math.min(0.10, (chunks[idx].includes('!') ? 0.08 : 0.02))
-
-        u.rate = clamp(baseRate + rand(-0.02, 0.03) + excitement, 0.90, 1.25)
-        u.pitch = clamp(basePitch + vib + rand(-0.01, 0.03), 0.70, 1.15)
+        // variação bem leve (natural)
+        u.rate = clamp(baseRate + rand(-0.03, 0.02), 0.95, 1.25)
+        u.pitch = clamp(basePitch + rand(-0.02, 0.02), 0.70, 1.05)
         u.volume = volume
 
         u.onend = () => {
-          idx += 1
-          speakNext()
+          i += 1
+          setTimeout(speakNext, pauseMs)
         }
 
         window.speechSynthesis.speak(u)
@@ -260,6 +224,7 @@ function useVoice() {
     } catch {}
   }
 
+  // speak “normal” (neutro)
   const speak = (text, opts = {}) => {
     if (typeof window === 'undefined') return
     if (!enabledRef.current) return
@@ -299,7 +264,7 @@ function SponsorsTicker({ patrocinadores }) {
   const loop = [...lista, ...lista, ...lista, ...lista, ...lista]
 
   return (
-    <div className="w-full max-w-[1400px] bg-slate-950/80 border-y border-white/10 py-3 overflow-hidden relative mb-6 backdrop-blur-md z-40 h-16 flex items-center rounded-2xl">
+    <div className="w-full bg-slate-950/80 border-y border-white/10 py-3 overflow-hidden relative mb-6 backdrop-blur-md z-40 h-16 flex items-center">
       <div className="absolute inset-y-0 left-0 w-32 bg-gradient-to-r from-[#0F172A] to-transparent z-10"/>
       <div className="absolute inset-y-0 right-0 w-32 bg-gradient-to-l from-[#0F172A] to-transparent z-10"/>
 
@@ -385,30 +350,14 @@ function BlazeRoulette({ items, onSpinEnd, vencedorParaGirar, patrocinadores, sf
   const containerRef = useRef(null)
   const controls = useAnimation()
 
-  const getRandomSponsor = () => {
-    if (!patrocinadores || patrocinadores.length === 0) return null
-    return patrocinadores[Math.floor(Math.random() * patrocinadores.length)]
-  }
-
-  const normalizeItem = (item) => {
-    // ✅ prioridade total: logo do time (escudo_url / logo_url / escudo / logo)
-    const teamLogo =
-      item?.logo_url ||
-      item?.escudo_url ||
-      item?.escudo ||
-      item?.logo ||
-      null
-
-    return {
-      ...item,
-      logo_url: teamLogo,
-      sponsor: getRandomSponsor()
-    }
-  }
-
   useEffect(() => {
     if (items.length > 0 && faixa.length === 0) {
-      setFaixa(items.slice(0, 15).map(normalizeItem))
+      const getRandomSponsor = () => {
+        if (!patrocinadores || patrocinadores.length === 0) return null
+        return patrocinadores[Math.floor(Math.random() * patrocinadores.length)]
+      }
+      const prepareItem = (item) => ({ ...item, sponsor: getRandomSponsor() })
+      setFaixa(items.slice(0, 15).map(prepareItem))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items.length])
@@ -419,12 +368,17 @@ function BlazeRoulette({ items, onSpinEnd, vencedorParaGirar, patrocinadores, sf
   }, [vencedorParaGirar])
 
   const girarRoleta = async (target) => {
-    if (!sfx) return
     await sfx.click()
     await sfx.playSpin()
 
-    const startItem = normalizeItem(items[0] || { nome_equipe: '...' })
-    const targetItem = normalizeItem(target)
+    const getRandomSponsor = () => {
+      if (!patrocinadores || patrocinadores.length === 0) return null
+      return patrocinadores[Math.floor(Math.random() * patrocinadores.length)]
+    }
+    const prepareItem = (item) => ({ ...item, sponsor: getRandomSponsor() })
+
+    const startItem = prepareItem(items[0] || { nome_equipe: '...' })
+    const targetItem = prepareItem(target)
 
     let fillers = []
     let lastAdded = startItem.id
@@ -435,16 +389,16 @@ function BlazeRoulette({ items, onSpinEnd, vencedorParaGirar, patrocinadores, sf
         randomItem = items[Math.floor(Math.random() * items.length)]
       } while (randomItem?.id === lastAdded && items.length > 1)
 
-      fillers.push(normalizeItem(randomItem))
+      fillers.push(prepareItem(randomItem))
       lastAdded = randomItem.id
     }
 
     if (fillers[fillers.length - 1]?.id === target.id && items.length > 1) {
       const replacement = items.find(t => t.id !== target.id) || fillers[fillers.length - 1]
-      fillers[fillers.length - 1] = normalizeItem(replacement)
+      fillers[fillers.length - 1] = prepareItem(replacement)
     }
 
-    const novaFaixa = [startItem, ...fillers, targetItem, ...items.slice(0, 3).map(normalizeItem)]
+    const novaFaixa = [startItem, ...fillers, targetItem, ...items.slice(0, 3).map(prepareItem)]
     setFaixa(novaFaixa)
     setResetIndex(prev => prev + 1)
 
@@ -473,7 +427,7 @@ function BlazeRoulette({ items, onSpinEnd, vencedorParaGirar, patrocinadores, sf
 
       <div
         ref={containerRef}
-        className="w-full max-w-[1400px] h-[260px] bg-[#0f172a] border-y-[4px] border-slate-700 relative overflow-hidden shadow-2xl flex items-center rounded-2xl"
+        className="w-full max-w-[1200px] h-[260px] bg-[#0f172a] border-y-[4px] border-slate-700 relative overflow-hidden shadow-2xl flex items-center rounded-2xl mx-auto"
       >
         <motion.div
           key={resetIndex}
@@ -486,9 +440,9 @@ function BlazeRoulette({ items, onSpinEnd, vencedorParaGirar, patrocinadores, sf
               <div className="w-full h-full rounded-2xl flex flex-col items-center justify-between p-3 text-center bg-gradient-to-b from-slate-800 to-slate-950 border-2 border-slate-700 shadow-xl relative overflow-hidden group">
                 <div className="flex-1 flex items-center justify-center w-full">
                   <div className="w-20 h-20 bg-slate-900 rounded-full flex items-center justify-center border-2 border-white/5 shadow-inner group-hover:scale-110 transition-transform duration-500 overflow-hidden">
-                    {/* ✅ AGORA: prioriza SEMPRE o escudo/logo do time */}
+                    {/* ✅ LOGO DO TIME SEMPRE EM 1º LUGAR */}
                     {item.logo_url ? (
-                      <img src={item.logo_url} className="w-14 h-14 object-contain" alt="Escudo" />
+                      <img src={item.logo_url} className="w-14 h-14 object-contain" alt={item.nome_equipe} />
                     ) : item.sponsor?.banner_url ? (
                       <img src={item.sponsor.banner_url} className="w-16 h-16 object-contain opacity-80" alt="Parceiro" />
                     ) : (
@@ -561,20 +515,6 @@ function SorteioContent() {
     return "Modo Personalizado"
   }
 
-  const normalizeEquipe = (e) => {
-    const logo =
-      e?.escudo_url ||
-      e?.logo_url ||
-      e?.escudo ||
-      e?.logo ||
-      null
-
-    return {
-      ...e,
-      logo_url: logo
-    }
-  }
-
   // init sfx
   useEffect(() => {
     sfxRef.current = createSfx()
@@ -588,10 +528,22 @@ function SorteioContent() {
       try {
         const { data } = await supabase
           .from('etapa_equipes')
-          .select('equipe_id, grupo, equipes(id, nome_equipe, escudo_url, logo_url)')
+          .select('*, equipes(*)')
           .eq('etapa_id', Number(etapaId))
 
-        const lista = data?.map(t => t.equipes).filter(Boolean).map(normalizeEquipe) || []
+        // ✅ normaliza logo do time (escudo_url -> logo_url)
+        const lista = (data || [])
+          .map(t => {
+            const eq = t.equipes
+            if (!eq) return null
+            return {
+              ...eq,
+              // logo do time pode estar em escudo_url (padrão do seu upload)
+              logo_url: eq.logo_url || eq.escudo_url || eq.escudo || eq.logo || null
+            }
+          })
+          .filter(Boolean)
+
         setEquipes(lista)
         setSelecionadas(lista)
 
@@ -616,64 +568,48 @@ function SorteioContent() {
     voice.setEnabled(somAtivo)
   }, [somAtivo]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const NARRADOR = useMemo(() => ({
-    inicio: [
-      "Atenção, torcida! Está valendo! Vamos começar o sorteio oficial!",
-      "Alô, alô! Preparação total! Vai rolar o sorteio… segura o coração!",
-      "Tá na hora! Luz na tela, emoção no ar… começando o sorteio agora!"
-    ],
-    proximo: [
-      "Valendo! Quem vem agora? Olho na roleta!",
-      "Segura essa… lá vem mais um!",
-      "Atenção no giro… pode ser a sua equipe!"
-    ],
-    caiuGrupo: [
-      (nome, letra) => `E vai pra tela… ${nome}! Confirmado no Grupo ${letra}!`,
-      (nome, letra) => `Tá definido! ${nome} no Grupo ${letra}!`,
-      (nome, letra) => `Olha quem chegou! ${nome}! Grupo ${letra}!`,
-      (nome, letra) => `É isso! ${nome} fecha no Grupo ${letra}!`
-    ],
-    caiuMata: [
-      (nome) => `Tá valendo! ${nome} confirmado na eliminatória!`,
-      (nome) => `É decisão! ${nome} entrou no mata-mata!`,
-      (nome) => `Segura essa! ${nome} avança no chaveamento!`
-    ],
-    fim: [
-      "Sorteio encerrado! Agora é tabela na mão e bola no pé!",
-      "Tá pronto! Grupos definidos! É só esperar a bola rolar!",
-      "Fim de sorteio! A partir de agora, é compromisso e futebol de verdade!"
-    ]
-  }), [])
-
   const narrarInicio = async () => {
     if (!sfxRef.current) return
     await sfxRef.current.click()
     if (!somAtivo) return
-    const frase = NARRADOR.inicio[Math.floor(Math.random() * NARRADOR.inicio.length)]
-    voice.speakNarrador(frase, { rate: 1.09, pitch: 0.80, vibratoDepth: 0.07 })
-  }
 
-  const narrarProximo = () => {
-    if (!somAtivo) return
-    const frase = NARRADOR.proximo[Math.floor(Math.random() * NARRADOR.proximo.length)]
-    voice.speakNarrador(frase, { rate: 1.08, pitch: 0.80, vibratoDepth: 0.06 })
+    const frases = [
+      "Atenção, torcida! É noite de decisão! Vai começar o sorteio oficial!",
+      "Tá valendo! Olho no telão! Começa agora o sorteio da competição!",
+      "Senhoras e senhores… clima de final! Vamos ao sorteio oficial!"
+    ]
+    voice.speakNarrador(frases[Math.floor(Math.random() * frases.length)], { rate: 1.12, pitch: 0.78, pauseMs: 120 })
   }
 
   const narrarResultado = (nome, letra) => {
     if (!somAtivo) return
-    if (estiloGrupo === 'MATA_MATA_PURO') {
-      const fn = NARRADOR.caiuMata[Math.floor(Math.random() * NARRADOR.caiuMata.length)]
-      voice.speakNarrador(fn(nome), { rate: 1.10, pitch: 0.80, vibratoDepth: 0.07 })
-      return
-    }
-    const fn = NARRADOR.caiuGrupo[Math.floor(Math.random() * NARRADOR.caiuGrupo.length)]
-    voice.speakNarrador(fn(nome, letra), { rate: 1.10, pitch: 0.80, vibratoDepth: 0.07 })
+
+    const frasesMataMata = [
+      `Atenção… está definido! ${nome}! Segue vivo na competição!`,
+      `Confirmado no palco! ${nome}! Tá dentro!`,
+      `É isso! ${nome}! Classificado!`
+    ]
+
+    const frasesGrupo = [
+      `No telão… ${nome}! Grupo ${letra}!`,
+      `Tá definido! ${nome}! Grupo ${letra}!`,
+      `Olha quem chegou! ${nome}! Grupo ${letra}!`,
+      `Confirma aí! ${nome}! Grupo ${letra}!`
+    ]
+
+    const pick = (estiloGrupo === 'MATA_MATA_PURO' ? frasesMataMata : frasesGrupo)
+    voice.speakNarrador(pick[Math.floor(Math.random() * pick.length)], { rate: 1.14, pitch: 0.78, pauseMs: 110 })
   }
 
   const narrarFim = () => {
     if (!somAtivo) return
-    const frase = NARRADOR.fim[Math.floor(Math.random() * NARRADOR.fim.length)]
-    voice.speakNarrador(frase, { rate: 1.06, pitch: 0.80, vibratoDepth: 0.05 })
+
+    const frases = [
+      "Sorteio encerrado! Agora é com vocês! Partiu tabela oficial!",
+      "Tá pronto! Grupos definidos! Emoção garantida na competição!",
+      "Fim de sorteio! A bola vai rolar… e a tabela tá no ar!"
+    ]
+    voice.speakNarrador(frases[Math.floor(Math.random() * frases.length)], { rate: 1.10, pitch: 0.78, pauseMs: 120 })
   }
 
   const prepararShow = async () => {
@@ -685,7 +621,6 @@ function SorteioContent() {
   const sortearProximo = async () => {
     if (poteSorteio.length === 0 || sorteando) return
     if (sfxRef.current) await sfxRef.current.click()
-    narrarProximo()
 
     const randomIndex = Math.floor(Math.random() * poteSorteio.length)
     setVencedorAtual(poteSorteio[randomIndex])
@@ -698,6 +633,7 @@ function SorteioContent() {
     const letraGrupo = letras[grupoAtualIndex]
     narrarResultado(vencedorAtual.nome_equipe, letraGrupo)
 
+    // ✅ IMPORTANTE: usar callback pra evitar bug de estado
     setTimeout(() => {
       setGrupos(prev => ({
         ...prev,
@@ -706,6 +642,7 @@ function SorteioContent() {
 
       setPoteSorteio(prev => {
         const novo = prev.filter(t => t.id !== vencedorAtual.id)
+        // se acabou, finaliza depois
         if (novo.length === 0) {
           setTimeout(() => {
             setFase('finalizado')
@@ -730,6 +667,7 @@ function SorteioContent() {
     try {
       await supabase.from('jogos').delete().eq('etapa_id', Number(etapaId))
 
+      // salva grupos no relacionamento
       if (estiloGrupo !== 'MATA_MATA_PURO') {
         for (let i = 0; i < qtdGrupos; i++) {
           const timeIds = (grupos[i] || []).map(t => t.id)
@@ -745,6 +683,7 @@ function SorteioContent() {
 
       let insertsJogos = []
 
+      // 1) INTRA-GRUPO
       if (estiloGrupo === 'INTRA_GRUPO' || estiloGrupo === 'TODOS_CONTRA_TODOS' || estiloGrupo === 'IDA_E_VOLTA') {
         const rodadasGlobais = {}
         let maxRodadas = 0
@@ -759,6 +698,7 @@ function SorteioContent() {
             if (!rodadasGlobais[numRodada]) rodadasGlobais[numRodada] = []
 
             jogosDaRodada.forEach(jogo => {
+              // ✅ FOLGA (quando ímpar)
               if (jogo.bye) {
                 rodadasGlobais[numRodada].push({
                   etapa_id: Number(etapaId),
@@ -794,6 +734,7 @@ function SorteioContent() {
         if (estiloGrupo === 'IDA_E_VOLTA') {
           for (let r = 1; r <= maxRodadas; r++) {
             if (rodadasGlobais[r]) {
+              // ✅ não duplicar FOLGA em volta
               const jogosVolta = rodadasGlobais[r]
                 .filter(j => j.tipo_jogo !== 'FOLGA')
                 .map(j => ({
@@ -810,6 +751,7 @@ function SorteioContent() {
         }
       }
 
+      // 2) CRUZAMENTO A x B
       else if (estiloGrupo === 'CRUZAMENTO' || estiloGrupo === 'INTER_GRUPO_TOTAL') {
         for (let k = 0; k < qtdGrupos; k += 2) {
           const g1 = grupos[k] || []
@@ -835,6 +777,7 @@ function SorteioContent() {
         }
       }
 
+      // 3) CASADINHA
       else if (estiloGrupo === 'CASADINHA' || estiloGrupo === 'CASADINHA_INTRA') {
         for (let i = 0; i < qtdGrupos; i++) {
           const times = grupos[i] || []
@@ -851,6 +794,7 @@ function SorteioContent() {
                 status: 'EM_BREVE'
               })
             } else if (times[k] && !times[k + 1]) {
+              // ✅ FOLGA se sobrar um
               insertsJogos.push({
                 etapa_id: Number(etapaId),
                 tipo_jogo: 'FOLGA',
@@ -865,6 +809,7 @@ function SorteioContent() {
         }
       }
 
+      // 4) MATA-MATA PURO
       else if (estiloGrupo === 'MATA_MATA_PURO') {
         let todos = []
         for (let i = 0; i < qtdGrupos; i++) todos = [...todos, ...(grupos[i] || [])]
@@ -880,6 +825,7 @@ function SorteioContent() {
               status: 'EM_BREVE'
             })
           } else if (todos[k] && !todos[k + 1]) {
+            // ✅ FOLGA se sobrar um
             insertsJogos.push({
               etapa_id: Number(etapaId),
               tipo_jogo: 'FOLGA',
@@ -893,6 +839,7 @@ function SorteioContent() {
         }
       }
 
+      // Mata-mata por modelo
       if (modeloId && estiloGrupo !== 'MATA_MATA_PURO') {
         const ultimaRodada = insertsJogos.length > 0 ? Math.max(...insertsJogos.map(j => j.rodada)) : 0
         const { data: modelo } = await supabase
@@ -935,7 +882,7 @@ function SorteioContent() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-white gap-4">
+      <div className="fixed inset-0 bg-slate-950 flex flex-col items-center justify-center text-white gap-4 z-[9999]">
         <Loader2 className="animate-spin w-12 h-12 text-blue-500" />
         <p className="font-black uppercase tracking-widest animate-pulse">Processando...</p>
       </div>
@@ -943,46 +890,45 @@ function SorteioContent() {
   }
 
   return (
-    <main className="min-h-screen w-full bg-[#0F172A] text-white p-4 font-sans overflow-x-hidden bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-blue-900/20 via-[#0F172A] to-[#020617]">
-      <div className="w-full max-w-[1600px] mx-auto min-h-screen flex flex-col items-center">
-        <div className="w-full max-w-[1400px]">
-          <div className="flex justify-between items-center mb-4 border-b border-white/5 pb-4">
-            <button onClick={() => router.back()} className="text-slate-500 hover:text-white uppercase text-xs font-bold flex items-center gap-1">
-              <ChevronLeft size={14} /> Cancelar
+    <main className="fixed inset-0 bg-[#0F172A] text-white p-4 font-sans overflow-hidden bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-blue-900/20 via-[#0F172A] to-[#020617] z-[9999]">
+      <div className="w-full max-w-[1600px] mx-auto h-full flex flex-col">
+        <div className="flex justify-between items-center mb-4 border-b border-white/5 pb-4">
+          <button onClick={() => router.back()} className="text-slate-500 hover:text-white uppercase text-xs font-bold flex items-center gap-1">
+            <ChevronLeft size={14} /> Cancelar
+          </button>
+
+          <div className="flex items-center gap-3">
+            <button
+              onClick={async () => {
+                setSomAtivo(v => !v)
+                if (sfxRef.current) await sfxRef.current.click()
+              }}
+              className={`text-[10px] uppercase font-black px-3 py-2 rounded-xl border transition-all ${
+                somAtivo ? 'bg-blue-600/20 border-blue-500/40 text-blue-200' : 'bg-slate-900/40 border-white/10 text-slate-400'
+              }`}
+              title="Ativar/Desativar Som e Voz"
+            >
+              {somAtivo ? 'Som: ON' : 'Som: OFF'}
             </button>
 
-            <div className="flex items-center gap-3">
-              <button
-                onClick={async () => {
-                  setSomAtivo(v => !v)
-                  if (sfxRef.current) await sfxRef.current.click()
-                }}
-                className={`text-[10px] uppercase font-black px-3 py-2 rounded-xl border transition-all ${
-                  somAtivo ? 'bg-blue-600/20 border-blue-500/40 text-blue-200' : 'bg-slate-900/40 border-white/10 text-slate-400'
-                }`}
-                title="Ativar/Desativar Som e Voz"
-              >
-                {somAtivo ? 'Som: ON' : 'Som: OFF'}
-              </button>
-
-              <h1 className="text-2xl md:text-3xl font-black italic uppercase tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-400">
-                SORTEIO <span className="text-blue-500">AO VIVO</span>
-              </h1>
-            </div>
+            <h1 className="text-2xl md:text-3xl font-black italic uppercase tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-400">
+              SORTEIO <span className="text-blue-500">AO VIVO</span>
+            </h1>
           </div>
-
-          <motion.div initial={{ y: -20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="bg-blue-900/30 border border-blue-500/30 p-3 rounded-xl mb-6 flex items-center gap-3">
-            <Info className="text-blue-400 shrink-0" size={20} />
-            <div>
-              <p className="text-[10px] uppercase font-bold text-blue-400 tracking-widest">Modo Atual</p>
-              <p className="text-sm font-medium text-blue-100">{getDescricaoModo()}</p>
-            </div>
-          </motion.div>
         </div>
 
+        {/* CARD INFORMATIVO */}
+        <motion.div initial={{ y: -20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="bg-blue-900/30 border border-blue-500/30 p-3 rounded-xl mb-6 flex items-center gap-3">
+          <Info className="text-blue-400 shrink-0" size={20} />
+          <div>
+            <p className="text-[10px] uppercase font-bold text-blue-400 tracking-widest">Modo Atual</p>
+            <p className="text-sm font-medium text-blue-100">{getDescricaoModo()}</p>
+          </div>
+        </motion.div>
+
         {fase === 'selecao' && (
-          <div className="w-full flex-1 flex flex-col items-center justify-center">
-            <div className="bg-slate-900/50 border border-white/10 p-8 rounded-[3rem] backdrop-blur-xl shadow-2xl w-full max-w-[1400px]">
+          <div className="flex-1 flex flex-col items-center justify-center">
+            <div className="bg-slate-900/50 border border-white/10 p-8 rounded-[3rem] backdrop-blur-xl shadow-2xl w-full max-w-5xl mx-auto">
               <div className="flex justify-between items-center mb-6">
                 <h2 className="text-xl font-black uppercase flex items-center gap-2">
                   <Users className="text-blue-500" /> Confirmar Times
@@ -1032,8 +978,8 @@ function SorteioContent() {
         )}
 
         {fase === 'sorteio' && (
-          <div className="w-full flex-1 flex flex-col items-center">
-            <div className="w-full flex flex-col items-center justify-center">
+          <div className="grid grid-rows-[auto_1fr] h-full gap-4">
+            <div className="flex flex-col items-center justify-center min-h-[350px] w-full">
               <SponsorsTicker patrocinadores={patrocinadores} />
 
               <BlazeRoulette
@@ -1044,7 +990,7 @@ function SorteioContent() {
                 sfx={sfxRef.current}
               />
 
-              <div className="mt-6 h-20 flex items-center justify-center">
+              <div className="mt-6 h-20 flex items-center justify-center w-full">
                 {!sorteando && poteSorteio.length > 0 ? (
                   <button
                     onClick={sortearProximo}
@@ -1058,56 +1004,54 @@ function SorteioContent() {
               </div>
             </div>
 
-            <div className="w-full max-w-[1400px] mx-auto mt-4 pb-10">
-              <div className={`grid gap-4 items-start ${
-                qtdGrupos === 2 ? 'grid-cols-2' : qtdGrupos === 3 ? 'grid-cols-3' : 'grid-cols-2 lg:grid-cols-4'
-              }`}>
-                {Array.from({ length: qtdGrupos }).map((_, idx) => (
-                  <div
-                    key={idx}
-                    className={`bg-slate-900/50 border p-4 rounded-2xl transition-all ${
-                      grupoAtualIndex === idx && !sorteando && poteSorteio.length > 0
-                        ? 'border-yellow-500/50 shadow-[0_0_20px_rgba(234,179,8,0.2)] scale-[1.02]'
-                        : 'border-white/10'
-                    }`}
-                  >
-                    <div className="flex justify-between items-center mb-4 border-b border-white/5 pb-2">
-                      <h3 className={`font-black uppercase text-xl ${grupoAtualIndex === idx ? 'text-yellow-400' : 'text-slate-500'}`}>
-                        Grupo {letras[idx]}
-                      </h3>
-                      <span className="bg-slate-800 text-white text-xs px-2 py-1 rounded font-bold">
-                        {grupos[idx]?.length || 0}
-                      </span>
-                    </div>
-
-                    <div className="space-y-2">
-                      <AnimatePresence>
-                        {grupos[idx]?.map((time, tIdx) => (
-                          <motion.div
-                            key={time.id}
-                            initial={{ opacity: 0, x: -20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            className="bg-slate-800 p-3 rounded-lg border border-white/5 flex justify-between items-center"
-                          >
-                            <span className="font-bold text-sm text-slate-200 truncate">{time.nome_equipe}</span>
-                            <span className="text-[10px] font-black text-slate-500">{letras[idx]}{tIdx + 1}</span>
-                          </motion.div>
-                        ))}
-                      </AnimatePresence>
-                    </div>
+            <div className={`grid gap-4 w-full items-start overflow-y-auto pb-10 mx-auto ${
+              qtdGrupos === 2 ? 'grid-cols-2' : qtdGrupos === 3 ? 'grid-cols-3' : 'grid-cols-2 lg:grid-cols-4'
+            }`}>
+              {Array.from({ length: qtdGrupos }).map((_, idx) => (
+                <div
+                  key={idx}
+                  className={`bg-slate-900/50 border p-4 rounded-2xl transition-all ${
+                    grupoAtualIndex === idx && !sorteando && poteSorteio.length > 0
+                      ? 'border-yellow-500/50 shadow-[0_0_20px_rgba(234,179,8,0.2)] scale-[1.02]'
+                      : 'border-white/10'
+                  }`}
+                >
+                  <div className="flex justify-between items-center mb-4 border-b border-white/5 pb-2">
+                    <h3 className={`font-black uppercase text-xl ${grupoAtualIndex === idx ? 'text-yellow-400' : 'text-slate-500'}`}>
+                      Grupo {letras[idx]}
+                    </h3>
+                    <span className="bg-slate-800 text-white text-xs px-2 py-1 rounded font-bold">
+                      {grupos[idx]?.length || 0}
+                    </span>
                   </div>
-                ))}
-              </div>
+
+                  <div className="space-y-2">
+                    <AnimatePresence>
+                      {grupos[idx]?.map((time, tIdx) => (
+                        <motion.div
+                          key={time.id}
+                          initial={{ opacity: 0, x: -20 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          className="bg-slate-800 p-3 rounded-lg border border-white/5 flex justify-between items-center"
+                        >
+                          <span className="font-bold text-sm text-slate-200 truncate">{time.nome_equipe}</span>
+                          <span className="text-[10px] font-black text-slate-500">{letras[idx]}{tIdx + 1}</span>
+                        </motion.div>
+                      ))}
+                    </AnimatePresence>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}
 
         {fase === 'finalizado' && (
-          <div className="w-full flex-1 flex flex-col items-center justify-center">
+          <div className="flex-1 flex flex-col items-center justify-center">
             <motion.div
               initial={{ scale: 0.5, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
-              className="bg-slate-900/80 border border-green-500/30 p-12 rounded-[3rem] text-center backdrop-blur-xl shadow-[0_0_100px_rgba(34,197,94,0.2)] max-w-[1000px] w-full"
+              className="bg-slate-900/80 border border-green-500/30 p-12 rounded-[3rem] text-center backdrop-blur-xl shadow-[0_0_100px_rgba(34,197,94,0.2)]"
             >
               <Sparkles className="text-green-400 mx-auto mb-6 w-24 h-24 animate-pulse"/>
               <h2 className="text-5xl font-black uppercase italic text-white mb-2">Sorteio Concluído!</h2>
@@ -1124,7 +1068,7 @@ function SorteioContent() {
           </div>
         )}
 
-        <div className="w-full max-w-[1400px] flex justify-end py-4 border-t border-white/5 mt-6">
+        <div className="w-full flex justify-end py-4 border-t border-white/5 mt-4">
           <a
             href="https://wa.me/5547997037512"
             target="_blank"
