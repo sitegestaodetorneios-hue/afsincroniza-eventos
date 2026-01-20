@@ -21,7 +21,7 @@ const CARD_GAP = 10
 const GIRO_DURATION = 6
 
 // ============================================================
-// ✅ FULLSCREEN PORTAL — centralização real na viewport
+// ✅ FULLSCREEN PORTAL
 // ============================================================
 function FullscreenPortal({ children }) {
   const [mounted, setMounted] = useState(false)
@@ -60,7 +60,6 @@ function createSfx() {
 
     osc.type = 'sawtooth'
     filter.type = 'lowpass'
-
     filter.frequency.setValueAtTime(260, now)
     filter.frequency.linearRampToValueAtTime(90, now + GIRO_DURATION)
 
@@ -133,7 +132,7 @@ function createSfx() {
 }
 
 // ============================================================
-// ✅ VOZ (TTS) — narrador esportivo (masculino)
+// ✅ VOZ (TTS)
 // ============================================================
 function useVoice() {
   const enabledRef = useRef(true)
@@ -182,7 +181,6 @@ function useVoice() {
   }, [])
 
   const setEnabled = (v) => { enabledRef.current = !!v }
-
   const clamp = (n, a, b) => Math.max(a, Math.min(b, n))
   const rand = (a, b) => a + Math.random() * (b - a)
 
@@ -208,67 +206,52 @@ function useVoice() {
       let i = 0
       const speakNext = () => {
         if (i >= parts.length) return
+
         const u = new SpeechSynthesisUtterance(parts[i])
         u.lang = 'pt-BR'
         u.voice = voiceRef.current || null
+
         u.rate = clamp(baseRate + rand(-0.02, 0.02), 0.92, 1.18)
         u.pitch = clamp(basePitch + rand(-0.02, 0.02), 0.55, 0.90)
         u.volume = volume
-        u.onend = () => { i += 1; setTimeout(speakNext, pauseMs) }
+
+        u.onend = () => {
+          i += 1
+          setTimeout(speakNext, pauseMs)
+        }
+
         window.speechSynthesis.speak(u)
       }
+
       speakNext()
     } catch {}
   }
 
-  const speak = (text, opts = {}) => {
-    if (typeof window === 'undefined') return
-    if (!enabledRef.current) return
-    if (!text) return
-
-    try {
-      window.speechSynthesis.cancel()
-      const u = new SpeechSynthesisUtterance(text)
-      u.lang = 'pt-BR'
-      u.voice = voiceRef.current || null
-
-      const baseRate = opts.rate ?? 1.02
-      const basePitch = opts.pitch ?? 0.78
-
-      u.rate = clamp(baseRate + rand(-0.02, 0.02), 0.90, 1.12)
-      u.pitch = clamp(basePitch + rand(-0.02, 0.02), 0.65, 0.95)
-      u.volume = opts.volume ?? 1.0
-
-      window.speechSynthesis.speak(u)
-    } catch {}
-  }
-
-  return { speak, speakNarrador, setEnabled }
+  return { speakNarrador, setEnabled }
 }
 
 // ============================================================
-// UI: Barra de Patrocinadores (TOP)
+// UI: Barra de Patrocinadores
 // ============================================================
 function SponsorsTicker({ patrocinadores }) {
   const lista = patrocinadores && patrocinadores.length > 0
     ? patrocinadores
     : [
-      { nome_empresa: "Seu Patrocínio Aqui", banner_url: null },
-      { nome_empresa: "Espaço Disponível", banner_url: null }
-    ]
+        { nome_empresa: "Seu Patrocínio Aqui", banner_url: null },
+        { nome_empresa: "Espaço Disponível", banner_url: null }
+      ]
 
   const loop = [...lista, ...lista, ...lista, ...lista, ...lista]
 
   return (
     <div className="w-full border-y border-blue-500/20 py-3 overflow-hidden relative mb-6 backdrop-blur-md z-40 h-16 flex items-center bg-gradient-to-r from-[#020617] via-[#0B1224] to-[#020617]">
-      <div className="absolute inset-y-0 left-0 w-32 bg-gradient-to-r from-[#0B1224] to-transparent z-10" />
-      <div className="absolute inset-y-0 right-0 w-32 bg-gradient-to-l from-[#0B1224] to-transparent z-10" />
+      <div className="absolute inset-y-0 left-0 w-32 bg-gradient-to-r from-[#0B1224] to-transparent z-10"/>
+      <div className="absolute inset-y-0 right-0 w-32 bg-gradient-to-l from-[#0B1224] to-transparent z-10"/>
 
       <motion.div
         className="flex gap-16 whitespace-nowrap items-center"
         animate={{ x: [0, -2000] }}
         transition={{ repeat: Infinity, duration: 55, ease: "linear" }}
-        style={{ willChange: 'transform' }}
       >
         {loop.map((pat, i) => (
           <div
@@ -283,7 +266,7 @@ function SponsorsTicker({ patrocinadores }) {
               />
             ) : (
               <div className="flex items-center gap-2">
-                <Star size={14} className="text-yellow-400 drop-shadow-[0_0_12px_rgba(250,204,21,0.45)]" />
+                <Star size={14} className="text-yellow-400 drop-shadow-[0_0_12px_rgba(250,204,21,0.45)]"/>
                 <span className="font-black uppercase text-sm text-slate-100 tracking-widest drop-shadow-[0_2px_8px_rgba(0,0,0,0.55)]">
                   {pat.nome_empresa || "PARCEIRO"}
                 </span>
@@ -299,8 +282,11 @@ function SponsorsTicker({ patrocinadores }) {
 // ============================================================
 // Algoritmos
 // ============================================================
+
+// ✅ Berger com FOLGA
 function gerarConfrontosBerger(times) {
   if (times.length < 2) return []
+
   const mapTimes = times.length % 2 === 0 ? [...times] : [...times, null]
   const total = mapTimes.length
   const numRodadas = total - 1
@@ -313,9 +299,13 @@ function gerarConfrontosBerger(times) {
       const t1 = mapTimes[i]
       const t2 = mapTimes[total - 1 - i]
 
-      if (t1 && t2) rodadaAtual.push({ a: t1, b: t2, bye: false })
-      else if (t1 && !t2) rodadaAtual.push({ a: t1, b: null, bye: true })
-      else if (!t1 && t2) rodadaAtual.push({ a: t2, b: null, bye: true })
+      if (t1 && t2) {
+        rodadaAtual.push({ a: t1, b: t2, bye: false })
+      } else if (t1 && !t2) {
+        rodadaAtual.push({ a: t1, b: null, bye: true })
+      } else if (!t1 && t2) {
+        rodadaAtual.push({ a: t2, b: null, bye: true })
+      }
     }
     rodadas.push(rodadaAtual)
     mapTimes.splice(1, 0, mapTimes.pop())
@@ -341,7 +331,7 @@ function gerarCruzamentoRotativo(grupoA, grupoB) {
 }
 
 // ============================================================
-// Rolete — CENTRALIZAÇÃO CORRIGIDA (sem 100vw / sem deslocar)
+// ✅ ROLETE CORRIGIDA: Breakout do Container (Full Width)
 // ============================================================
 function BlazeRoulette({ items, onSpinEnd, vencedorParaGirar, patrocinadores, sfx }) {
   const [faixa, setFaixa] = useState([])
@@ -350,13 +340,13 @@ function BlazeRoulette({ items, onSpinEnd, vencedorParaGirar, patrocinadores, sf
   const controls = useAnimation()
 
   useEffect(() => {
-    if (items.length > 0 && faixa.length === 0) setFaixa(items.slice(0, 15))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (items.length > 0 && faixa.length === 0) {
+      setFaixa(items.slice(0, 15))
+    }
   }, [items.length])
 
   useEffect(() => {
     if (vencedorParaGirar) girarRoleta(vencedorParaGirar)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vencedorParaGirar])
 
   const girarRoleta = async (target) => {
@@ -378,26 +368,19 @@ function BlazeRoulette({ items, onSpinEnd, vencedorParaGirar, patrocinadores, sf
       lastAdded = randomItem?.id
     }
 
-    if (fillers[fillers.length - 1]?.id === target.id && items.length > 1) {
-      const replacement = items.find(t => t.id !== target.id) || fillers[fillers.length - 1]
-      fillers[fillers.length - 1] = replacement
-    }
-
     const novaFaixa = [startItem, ...fillers, targetItem, ...items.slice(0, 3)]
     setFaixa(novaFaixa)
     setResetIndex(prev => prev + 1)
 
     const targetIndex = 51
     const distToTargetStart = targetIndex * (CARD_WIDTH + CARD_GAP)
-
-    const rect = containerRef.current?.getBoundingClientRect()
-    const containerWidth = rect?.width ?? 1200
-
-    const stopPosition = -(distToTargetStart) + (containerWidth / 2) - (CARD_WIDTH / 2)
+    
+    // ✅ CORREÇÃO: Pega a largura do viewport (janela), não do container
+    const viewportWidth = window.innerWidth
+    const stopPosition = -(distToTargetStart) + (viewportWidth / 2) - (CARD_WIDTH / 2)
 
     setTimeout(async () => {
-      // mais estável que start(duration 0)
-      controls.set({ x: 0 })
+      await controls.start({ x: 0, transition: { duration: 0 } })
       await controls.start({
         x: stopPosition,
         transition: { duration: GIRO_DURATION, ease: [0.15, 0.85, 0.35, 1] }
@@ -408,62 +391,63 @@ function BlazeRoulette({ items, onSpinEnd, vencedorParaGirar, patrocinadores, sf
   }
 
   return (
-    <div className="w-full flex flex-col items-center relative my-4 overflow-x-hidden">
-      {/* wrapper centralizador real */}
-      <div className="w-full flex justify-center">
-        <div className="relative w-full max-w-[1200px]">
-          {/* ponteiro */}
-          <div className="absolute z-30 left-1/2 -translate-x-1/2 -top-4">
-            <div className="w-0 h-0 border-l-[20px] border-l-transparent border-r-[20px] border-r-transparent border-t-[30px] border-t-yellow-400 drop-shadow-[0_4px_4px_rgba(0,0,0,0.5)]" />
-          </div>
-          {/* linha central */}
-          <div className="absolute z-20 top-0 bottom-0 left-1/2 w-[2px] bg-yellow-500/30 h-full" />
+    // ✅ CORREÇÃO: "calc(50% - 50vw)" força o elemento a ocupar a tela toda
+    // mesmo estando dentro de um container centralizado.
+    <div 
+      className="flex flex-col items-center relative my-4"
+      style={{
+        width: '100vw',
+        marginLeft: 'calc(50% - 50vw)',
+        marginRight: 'calc(50% - 50vw)'
+      }}
+    >
+      <div className="absolute z-50 left-1/2 -translate-x-1/2 -top-4">
+        <div className="w-0 h-0 border-l-[20px] border-l-transparent border-r-[20px] border-r-transparent border-t-[30px] border-t-yellow-400 drop-shadow-[0_4px_10px_rgba(0,0,0,0.5)]" />
+      </div>
+      
+      <div className="absolute z-40 top-0 bottom-0 left-1/2 -translate-x-1/2 w-[2px] bg-yellow-500/20 h-full pointer-events-none" />
 
-          <div
-            ref={containerRef}
-            className="w-full h-[240px] bg-[#0f172a] border-y-[4px] border-slate-700 relative overflow-hidden shadow-2xl flex items-center rounded-2xl"
-          >
-            <motion.div
-              key={resetIndex}
-              animate={controls}
-              className="flex items-center"
-              style={{ display: 'flex', gap: `${CARD_GAP}px`, willChange: 'transform' }}
-            >
-              {faixa.map((item, i) => (
-                <div key={`${item.id}-${i}`} className="shrink-0 relative" style={{ width: CARD_WIDTH, height: 170 }}>
-                  <div className="w-full h-full rounded-2xl flex flex-col items-center justify-between p-3 text-center bg-gradient-to-b from-slate-800 to-slate-950 border-2 border-slate-700 shadow-xl relative overflow-hidden group">
-                    <div className="flex-1 flex items-center justify-center w-full">
-                      <div className="w-24 h-24 bg-slate-900 rounded-full flex items-center justify-center border-2 border-white/5 shadow-inner group-hover:scale-110 transition-transform duration-500 overflow-hidden">
-                        {/* ✅ LOGO DO TIME (escudo_url -> logo_url) */}
-                        {item.logo_url ? (
-                          <img src={item.logo_url} className="w-16 h-16 object-contain" alt={item.nome_equipe} />
-                        ) : (
-                          <Users size={34} className="text-slate-600" />
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="mb-2 w-full">
-                      <span className="text-sm font-black uppercase text-white leading-tight line-clamp-2 px-1 drop-shadow-md">
-                        {item.nome_equipe}
-                      </span>
-                    </div>
+      <div
+        ref={containerRef}
+        className="w-full h-[240px] bg-[#0f172a] border-y-[4px] border-slate-700 relative overflow-hidden shadow-2xl flex items-center"
+      >
+        <motion.div
+          key={resetIndex}
+          animate={controls}
+          className="flex items-center min-w-0"
+          style={{ display: 'flex', gap: `${CARD_GAP}px` }}
+        >
+          {faixa.map((item, i) => (
+            <div key={`${item.id}-${i}`} className="shrink-0" style={{ width: CARD_WIDTH, height: 170 }}>
+              <div className="w-full h-full rounded-2xl flex flex-col items-center justify-between p-3 text-center bg-gradient-to-b from-slate-800 to-slate-950 border-2 border-slate-700 shadow-xl relative overflow-hidden group">
+                <div className="flex-1 flex items-center justify-center w-full">
+                  <div className="w-24 h-24 bg-slate-900 rounded-full flex items-center justify-center border-2 border-white/5 shadow-inner group-hover:scale-110 transition-transform duration-500 overflow-hidden">
+                    {item.logo_url ? (
+                      <img src={item.logo_url} className="w-16 h-16 object-contain" alt={item.nome_equipe} />
+                    ) : (
+                      <Users size={34} className="text-slate-600" />
+                    )}
                   </div>
                 </div>
-              ))}
-            </motion.div>
+                <div className="mb-2 w-full">
+                  <span className="text-sm font-black uppercase text-white leading-tight line-clamp-2 px-1 drop-shadow-md">
+                    {item.nome_equipe}
+                  </span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </motion.div>
 
-            <div className="absolute inset-y-0 left-0 w-48 bg-gradient-to-r from-[#0F172A] via-[#0F172A]/80 to-transparent z-10 pointer-events-none" />
-            <div className="absolute inset-y-0 right-0 w-48 bg-gradient-to-l from-[#0F172A] via-[#0F172A]/80 to-transparent z-10 pointer-events-none" />
-          </div>
-        </div>
+        <div className="absolute inset-y-0 left-0 w-1/4 bg-gradient-to-r from-[#0F172A] via-[#0F172A]/80 to-transparent z-10 pointer-events-none" />
+        <div className="absolute inset-y-0 right-0 w-1/4 bg-gradient-to-l from-[#0F172A] via-[#0F172A]/80 to-transparent z-10 pointer-events-none" />
       </div>
     </div>
   )
 }
 
 // ============================================================
-// Página
+// Página Principal
 // ============================================================
 function SorteioContent() {
   const searchParams = useSearchParams()
@@ -491,48 +475,27 @@ function SorteioContent() {
   const sfxRef = useRef(null)
   const voice = useVoice()
 
-  // ✅ trava overflow no HTML + BODY (evita “empurrão” lateral)
+  // Bloqueia scroll horizontal do body para evitar que a roleta full-width cause scrollbar
   useEffect(() => {
     const prevBodyOverflow = document.body.style.overflow
     const prevBodyPaddingRight = document.body.style.paddingRight
-    const prevHtmlOverflowX = document.documentElement.style.overflowX
-    const prevHtmlOverflow = document.documentElement.style.overflow
-
     const sbw = window.innerWidth - document.documentElement.clientWidth
 
     document.documentElement.style.overflowX = 'hidden'
-    document.documentElement.style.overflow = 'hidden'
-    document.body.style.overflow = 'hidden'
+    document.body.style.overflowX = 'hidden'
+    // document.body.style.overflow = 'hidden' // Opcional: trava tudo se quiser
 
     if (sbw > 0) document.body.style.paddingRight = `${sbw}px`
 
     return () => {
       document.body.style.overflow = prevBodyOverflow
       document.body.style.paddingRight = prevBodyPaddingRight
-      document.documentElement.style.overflowX = prevHtmlOverflowX
-      document.documentElement.style.overflow = prevHtmlOverflow
+      document.documentElement.style.overflowX = ''
+      document.body.style.overflowX = ''
     }
   }, [])
 
-  const resetViewport = () => {
-    try {
-      window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
-      document.documentElement.scrollLeft = 0
-      document.body.scrollLeft = 0
-      if (document.scrollingElement) document.scrollingElement.scrollLeft = 0
-    } catch {}
-  }
-
-  useEffect(() => { resetViewport() }, [])
-  useEffect(() => {
-    resetViewport()
-    const t1 = setTimeout(resetViewport, 0)
-    const t2 = setTimeout(resetViewport, 50)
-    const t3 = setTimeout(resetViewport, 150)
-    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3) }
-  }, [fase])
-
-  const getDescricaoModo = () => {
+  function getDescricaoModo() {
     if (estiloGrupo === 'INTRA_GRUPO' || estiloGrupo === 'TODOS_CONTRA_TODOS') return "Todos contra Todos (Dentro do Grupo)"
     if (estiloGrupo === 'IDA_E_VOLTA') return "Ida e Volta (Revanche)"
     if (estiloGrupo === 'CRUZAMENTO' || estiloGrupo === 'INTER_GRUPO_TOTAL') return "Cruzamento Total: Todos do A contra Todos do B"
@@ -541,10 +504,26 @@ function SorteioContent() {
     return "Modo Personalizado"
   }
 
+  // init sfx
   useEffect(() => {
     sfxRef.current = createSfx()
   }, [])
 
+  const resetViewport = () => {
+    try {
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+      if (document.scrollingElement) document.scrollingElement.scrollLeft = 0
+    } catch {}
+  }
+
+  useEffect(() => { resetViewport() }, [])
+  useEffect(() => { 
+    resetViewport()
+    const t = setTimeout(resetViewport, 150)
+    return () => clearTimeout(t)
+  }, [fase])
+
+  // carregar dados
   useEffect(() => {
     if (!etapaId) return
     async function load() {
@@ -561,7 +540,6 @@ function SorteioContent() {
             if (!eq) return null
             return {
               ...eq,
-              // ✅ pega escudo_url da equipe
               logo_url: eq.logo_url || eq.escudo_url || eq.escudo || eq.logo || null
             }
           })
@@ -586,9 +564,10 @@ function SorteioContent() {
     load()
   }, [etapaId, qtdGrupos])
 
+  // som on/off
   useEffect(() => {
     voice.setEnabled(somAtivo)
-  }, [somAtivo]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [somAtivo]) 
 
   const narrarInicio = async () => {
     if (!sfxRef.current) return
@@ -628,7 +607,6 @@ function SorteioContent() {
 
   const narrarFim = () => {
     if (!somAtivo) return
-
     const frases = [
       "Sorteio encerrado! Grupos definidos! Agora é bola rolando!",
       "Tá pronto! Emoção garantida! Partiu tabela oficial!",
@@ -642,7 +620,6 @@ function SorteioContent() {
     resetViewport()
     setPoteSorteio([...selecionadas])
     setFase('sorteio')
-    setTimeout(resetViewport, 0)
     setTimeout(resetViewport, 80)
   }
 
@@ -687,11 +664,13 @@ function SorteioContent() {
     }, 1600)
   }
 
+  // --- Salvar e Gerar Jogos
   const salvarEGerar = async () => {
     setLoading(true)
     try {
       await supabase.from('jogos').delete().eq('etapa_id', Number(etapaId))
 
+      // salva grupos no relacionamento
       if (estiloGrupo !== 'MATA_MATA_PURO') {
         for (let i = 0; i < qtdGrupos; i++) {
           const timeIds = (grupos[i] || []).map(t => t.id)
@@ -707,6 +686,7 @@ function SorteioContent() {
 
       let insertsJogos = []
 
+      // 1) INTRA-GRUPO
       if (estiloGrupo === 'INTRA_GRUPO' || estiloGrupo === 'TODOS_CONTRA_TODOS' || estiloGrupo === 'IDA_E_VOLTA') {
         const rodadasGlobais = {}
         let maxRodadas = 0
@@ -765,11 +745,15 @@ function SorteioContent() {
                   rodada: r + maxRodadas,
                   obs_publica: j.obs_publica.replace('Rodada', 'Volta')
                 }))
+
               insertsJogos.push(...jogosVolta)
             }
           }
         }
-      } else if (estiloGrupo === 'CRUZAMENTO' || estiloGrupo === 'INTER_GRUPO_TOTAL') {
+      }
+
+      // 2) CRUZAMENTO A x B
+      else if (estiloGrupo === 'CRUZAMENTO' || estiloGrupo === 'INTER_GRUPO_TOTAL') {
         for (let k = 0; k < qtdGrupos; k += 2) {
           const g1 = grupos[k] || []
           const g2 = grupos[k + 1] || []
@@ -792,7 +776,10 @@ function SorteioContent() {
             })
           }
         }
-      } else if (estiloGrupo === 'CASADINHA' || estiloGrupo === 'CASADINHA_INTRA') {
+      }
+
+      // 3) CASADINHA
+      else if (estiloGrupo === 'CASADINHA' || estiloGrupo === 'CASADINHA_INTRA') {
         for (let i = 0; i < qtdGrupos; i++) {
           const times = grupos[i] || []
           const letra = letras[i]
@@ -820,7 +807,10 @@ function SorteioContent() {
             }
           }
         }
-      } else if (estiloGrupo === 'MATA_MATA_PURO') {
+      }
+
+      // 4) MATA-MATA PURO
+      else if (estiloGrupo === 'MATA_MATA_PURO') {
         let todos = []
         for (let i = 0; i < qtdGrupos; i++) todos = [...todos, ...(grupos[i] || [])]
         for (let k = 0; k < todos.length; k += 2) {
@@ -848,6 +838,7 @@ function SorteioContent() {
         }
       }
 
+      // Mata-mata por modelo
       if (modeloId && estiloGrupo !== 'MATA_MATA_PURO') {
         const ultimaRodada = insertsJogos.length > 0 ? Math.max(...insertsJogos.map(j => j.rodada)) : 0
         const { data: modelo } = await supabase
@@ -900,7 +891,7 @@ function SorteioContent() {
   return (
     <FullscreenPortal>
       <main className="fixed inset-0 overflow-hidden bg-[#0F172A] text-white p-4 font-sans bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-blue-900/20 via-[#0F172A] to-[#020617] z-[9999]">
-        <div className="w-full max-w-[1600px] mx-auto h-full flex flex-col min-w-0">
+          <div className="w-full max-w-[1600px] mx-auto h-full flex flex-col min-w-0">
           <div className="flex justify-between items-center mb-4 border-b border-white/5 pb-4">
             <button onClick={() => router.back()} className="text-slate-500 hover:text-white uppercase text-xs font-bold flex items-center gap-1">
               <ChevronLeft size={14} /> Cancelar
@@ -926,6 +917,7 @@ function SorteioContent() {
             </div>
           </div>
 
+          {/* CARD INFORMATIVO */}
           <motion.div initial={{ y: -20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="bg-blue-900/30 border border-blue-500/30 p-3 rounded-xl mb-6 flex items-center gap-3">
             <Info className="text-blue-400 shrink-0" size={20} />
             <div>
@@ -961,7 +953,7 @@ function SorteioContent() {
                           active ? 'bg-blue-600 border-blue-500' : 'bg-slate-800/50 border-white/5'
                         }`}
                       >
-                        {active ? <CheckCircle2 size={14} className="text-white" /> : <div className="w-3.5 h-3.5 rounded-full border border-slate-500" />}
+                        {active ? <CheckCircle2 size={14} className="text-white"/> : <div className="w-3.5 h-3.5 rounded-full border border-slate-500"/>}
                         <span className={`font-bold uppercase text-xs truncate ${active ? 'text-white' : 'text-slate-400'}`}>
                           {eq.nome_equipe}
                         </span>
@@ -986,7 +978,7 @@ function SorteioContent() {
           )}
 
           {fase === 'sorteio' && (
-            <div className="grid grid-rows-[auto_1fr] h-full gap-4 w-full min-w-0">
+              <div className="grid grid-rows-[auto_1fr] h-full gap-4 w-full min-w-0">
               <div className="flex flex-col items-center justify-center min-h-[350px] w-full">
                 <SponsorsTicker patrocinadores={patrocinadores} />
 
@@ -1061,7 +1053,7 @@ function SorteioContent() {
                 animate={{ scale: 1, opacity: 1 }}
                 className="bg-slate-900/80 border border-green-500/30 p-12 rounded-[3rem] text-center backdrop-blur-xl shadow-[0_0_100px_rgba(34,197,94,0.2)]"
               >
-                <Sparkles className="text-green-400 mx-auto mb-6 w-24 h-24 animate-pulse" />
+                <Sparkles className="text-green-400 mx-auto mb-6 w-24 h-24 animate-pulse"/>
                 <h2 className="text-5xl font-black uppercase italic text-white mb-2">Sorteio Concluído!</h2>
                 <p className="text-slate-400 text-lg mb-8">Todos os grupos foram definidos.</p>
 
@@ -1070,7 +1062,7 @@ function SorteioContent() {
                   disabled={loading}
                   className="bg-green-600 hover:bg-green-500 text-white font-black px-12 py-5 rounded-2xl uppercase text-xl shadow-xl flex items-center gap-3 mx-auto hover:scale-105 transition-all"
                 >
-                  {loading ? <Loader2 className="animate-spin" /> : <Save />} Gerar Tabela Oficial
+                  {loading ? <Loader2 className="animate-spin"/> : <Save/>} Gerar Tabela Oficial
                 </button>
               </motion.div>
             </div>
