@@ -60,7 +60,7 @@ export async function GET(request) {
     if (equipeIds.length > 0) {
         const { data: eq, error: errEq } = await supabase
             .from('equipes')
-            .select('id, nome_equipe') 
+            .select('id, nome_equipe, escudo_url')
             .in('id', equipeIds)
         if (errEq) throw errEq
         equipes = eq || []

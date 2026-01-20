@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Loader2, Radio, Goal, Calendar, Clock, Trophy, User, CheckCircle, Volume2 } from 'lucide-react'
+import { ArrowLeft, Loader2, Radio, Goal, Calendar, Clock, Trophy, CheckCircle, Volume2 } from 'lucide-react'
 
 async function safeJson(res) {
   try { return await res.json() } catch { return {} }
@@ -13,6 +13,11 @@ function badgeFor(tipo) {
   if (tipo === 'AMARELO') return { label: '🟨 AMARELO', cls: 'bg-yellow-100 text-yellow-800 border-yellow-200' }
   if (tipo === 'VERMELHO') return { label: '🟥 VERMELHO', cls: 'bg-red-100 text-red-800 border-red-200' }
   return { label: tipo, cls: 'bg-slate-100 text-slate-700 border-slate-200' }
+}
+
+function escudoUrl(equipe) {
+  const u = equipe?.escudo_url
+  return (u && String(u).length > 5) ? u : ''
 }
 
 export default function AoVivo() {
@@ -289,8 +294,15 @@ export default function AoVivo() {
         ) : (
           <div className="grid gap-6">
             {jogosParaMostrar.map((j) => {
-              const a = equipeMap.get(j.equipe_a_id)?.nome_equipe || `Equipe A`
-              const b = equipeMap.get(j.equipe_b_id)?.nome_equipe || `Equipe B`
+              const eqA = equipeMap.get(j.equipe_a_id)
+              const eqB = equipeMap.get(j.equipe_b_id)
+
+              const a = eqA?.nome_equipe || `Equipe A`
+              const b = eqB?.nome_equipe || `Equipe B`
+
+              const escA = escudoUrl(eqA)
+              const escB = escudoUrl(eqB)
+
               const evs = eventosByJogo.get(j.id) || []
               const isLive = j.status === 'EM_ANDAMENTO'
 
@@ -305,7 +317,22 @@ export default function AoVivo() {
                   </div>
 
                   <div className="p-6 md:p-10 flex flex-col md:flex-row items-center justify-between gap-6">
-                    <div className="flex-1 text-center md:text-right order-2 md:order-1 w-full"><p className="text-xl font-black text-slate-900 uppercase italic tracking-tighter">{a}</p></div>
+                    <div className="flex-1 text-center md:text-right order-2 md:order-1 w-full">
+                      <div className="flex items-center justify-center md:justify-end gap-3">
+                        {escA ? (
+                          <img
+                            src={escA}
+                            alt={`Escudo ${a}`}
+                            className="h-10 w-10 rounded-xl object-cover border border-slate-200 bg-white"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <div className="h-10 w-10 rounded-xl bg-slate-100 border border-slate-200" />
+                        )}
+                        <p className="text-xl font-black text-slate-900 uppercase italic tracking-tighter">{a}</p>
+                      </div>
+                    </div>
+
                     <div className="flex flex-col items-center order-1 md:order-2">
                       <div className={`flex items-center gap-6 text-white px-8 py-4 rounded-3xl shadow-xl relative ${isLive ? 'bg-slate-900 ring-4 ring-red-500/20' : 'bg-slate-700'}`}>
                         {isLive && <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full animate-pulse border-2 border-white"></span>}
@@ -319,12 +346,31 @@ export default function AoVivo() {
                         </div>
                       )}
                     </div>
-                    <div className="flex-1 text-center md:text-left order-3 w-full"><p className="text-xl font-black text-slate-900 uppercase italic tracking-tighter">{b}</p></div>
+
+                    <div className="flex-1 text-center md:text-left order-3 w-full">
+                      <div className="flex items-center justify-center md:justify-start gap-3">
+                        {escB ? (
+                          <img
+                            src={escB}
+                            alt={`Escudo ${b}`}
+                            className="h-10 w-10 rounded-xl object-cover border border-slate-200 bg-white"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <div className="h-10 w-10 rounded-xl bg-slate-100 border border-slate-200" />
+                        )}
+                        <p className="text-xl font-black text-slate-900 uppercase italic tracking-tighter">{b}</p>
+                      </div>
+                    </div>
                   </div>
 
                   {evs.length > 0 && (
                     <div className="bg-slate-50 p-6 border-t border-slate-100">
-                      <div className="flex items-center gap-2 mb-4"><Goal size={16} className="text-slate-400" /><p className="font-black uppercase text-slate-400 text-[11px] tracking-widest italic">Acontecimentos da Partida</p></div>
+                      <div className="flex items-center gap-2 mb-4">
+                        <Goal size={16} className="text-slate-400" />
+                        <p className="font-black uppercase text-slate-400 text-[11px] tracking-widest italic">Acontecimentos da Partida</p>
+                      </div>
+
                       <div className="grid gap-2 max-h-72 overflow-y-auto pr-2 custom-scrollbar">
                         {evs.map((ev) => {
                           const badge = badgeFor(ev.tipo)
@@ -348,6 +394,7 @@ export default function AoVivo() {
                       </div>
                     </div>
                   )}
+
                   {j.arbitro && (
                     <div className="bg-slate-50 px-6 py-3 border-t border-slate-100 text-center">
                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center justify-center gap-2 italic">

@@ -74,7 +74,7 @@ export async function GET(request) {
     const [timesRes, jogosRes] = await Promise.all([
       supabase
         .from('etapa_equipes')
-        .select('equipe_id, grupo, equipes(nome_equipe)')
+        .select('equipe_id, grupo, equipes(nome_equipe, escudo_url)')
         .eq('etapa_id', id),
       supabase
         .from('jogos')
@@ -110,13 +110,14 @@ export async function GET(request) {
     if (cartoesRes.error) return NextResponse.json({ error: cartoesRes.error.message }, { status: 500 })
     if (artilhariaRes.error) return NextResponse.json({ error: artilhariaRes.error.message }, { status: 500 })
 
-    // 5) STATS
+    // 5) STATS (inclui escudo_url)
     const stats = {}
     timesRes.data?.forEach(t => {
       const grp = (t.grupo || 'U').trim().toUpperCase().replace('GRUPO', '').trim() || 'U'
       stats[t.equipe_id] = {
         equipe_id: t.equipe_id,
         nome_equipe: t.equipes?.nome_equipe || 'Time',
+        escudo_url: t.equipes?.escudo_url || '',
         grupo: grp,
         pts: 0, v: 0, e: 0, d: 0, j: 0, sg: 0, gp: 0, gc: 0,
         ca: 0, cv: 0,
@@ -198,15 +199,20 @@ export async function GET(request) {
         .filter(j => j.tipo_jogo !== 'GRUPO')
         .map(j => ({
           ...j,
-          equipeA: { nome_equipe: stats[j.equipe_a_id]?.nome_equipe || j.origem_a || 'A definir' },
-          equipeB: { nome_equipe: stats[j.equipe_b_id]?.nome_equipe || j.origem_b || 'A definir' },
+          equipeA: {
+            nome_equipe: stats[j.equipe_a_id]?.nome_equipe || j.origem_a || 'A definir',
+            escudo_url: stats[j.equipe_a_id]?.escudo_url || '',
+          },
+          equipeB: {
+            nome_equipe: stats[j.equipe_b_id]?.nome_equipe || j.origem_b || 'A definir',
+            escudo_url: stats[j.equipe_b_id]?.escudo_url || '',
+          },
         })),
       artilharia: Object.values(artilhariaMap).sort((a, b) => b.gols - a.gols).slice(0, 10),
       defesa: classificacao.filter(t => t.j > 0).sort((a, b) => (a.gc / a.j) - (b.gc / b.j)).slice(0, 5),
       now: new Date().toISOString(),
     }
 
-    // ✅ CACHE IGUAL AO AO-VIVO (funciona na Vercel)
     return NextResponse.json(corpo, {
       status: 200,
       headers: {

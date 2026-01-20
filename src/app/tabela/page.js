@@ -3,6 +3,10 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Trophy, Info, Loader2, ChevronDown, Volume2, ShieldCheck } from 'lucide-react'
 
+function escudo(u) {
+  return (u && String(u).length > 5) ? u : ''
+}
+
 export default function Tabela() {
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState({
@@ -25,7 +29,6 @@ export default function Tabela() {
       const url = targetId ? `/api/tabela?etapa_id=${targetId}` : `/api/tabela`
 
       const [res, resPatro] = await Promise.all([
-        // ✅ não usar no-store e não usar cache-buster (?t=...) — deixa a CDN cachear (30s)
         fetch(url),
         fetch('/api/admin/patrocinios')
       ])
@@ -46,7 +49,6 @@ export default function Tabela() {
 
       setPatrocinios(Array.isArray(patroData) ? patroData : [])
 
-      // ✅ se veio etapa default e o select ainda não tem filtro, preenche
       if (!targetId && json?.etapa?.id) setFiltroId(String(json.etapa.id))
     } catch (e) {
       console.error('Erro Tabela:', e)
@@ -89,7 +91,6 @@ export default function Tabela() {
     [patrocinios]
   )
 
-  // --- ✅ LÓGICA DINÂMICA DE GRUPOS (PARA A, B, C, D...) ---
   const gruposList = useMemo(() => {
     const lista = data.classificacao || []
     if (lista.length === 0) return []
@@ -221,7 +222,7 @@ export default function Tabela() {
               ))}
             </div>
 
-            {/* ✅ FINAIS E MATA-MATA (COM TROFÉU) */}
+            {/* ✅ FINAIS E MATA-MATA */}
             {data.finais?.length > 0 && (
               <div className="pt-8">
                 <h2 className="text-xl font-black uppercase text-slate-900 mb-6 flex items-center gap-2">
@@ -248,6 +249,9 @@ export default function Tabela() {
                       }
                     }
 
+                    const escA = escudo(jogo.equipeA?.escudo_url)
+                    const escB = escudo(jogo.equipeB?.escudo_url)
+
                     return (
                       <div
                         key={jogo.id}
@@ -255,13 +259,18 @@ export default function Tabela() {
                           vencedor ? 'border-yellow-400 shadow-yellow-100 ring-1 ring-yellow-400' : 'border-slate-200 hover:border-blue-500'
                         }`}
                       >
-                        <div className={`w-1/3 flex items-center justify-end gap-1 ${vencedor === 'A' ? 'text-yellow-600' : 'text-slate-800'}`}>
+                        <div className={`w-1/3 flex items-center justify-end gap-2 ${vencedor === 'A' ? 'text-yellow-600' : 'text-slate-800'}`}>
                           {vencedor === 'A' && (
                             <Trophy size={16} className="text-yellow-500 fill-yellow-500 animate-bounce flex-shrink-0" />
                           )}
                           <span className="font-black text-sm uppercase tracking-tighter truncate text-right" title={jogo.equipeA?.nome_equipe}>
                             {jogo.equipeA?.nome_equipe}
                           </span>
+                          {escA ? (
+                            <img src={escA} alt="" className="h-8 w-8 rounded-lg border border-slate-200 bg-white object-cover flex-shrink-0" loading="lazy" />
+                          ) : (
+                            <div className="h-8 w-8 rounded-lg bg-slate-100 border border-slate-200 flex-shrink-0" />
+                          )}
                         </div>
 
                         <div className="flex flex-col items-center justify-center w-1/3 px-1">
@@ -285,7 +294,12 @@ export default function Tabela() {
                           </span>
                         </div>
 
-                        <div className={`w-1/3 flex items-center justify-start gap-1 ${vencedor === 'B' ? 'text-yellow-600' : 'text-slate-800'}`}>
+                        <div className={`w-1/3 flex items-center justify-start gap-2 ${vencedor === 'B' ? 'text-yellow-600' : 'text-slate-800'}`}>
+                          {escB ? (
+                            <img src={escB} alt="" className="h-8 w-8 rounded-lg border border-slate-200 bg-white object-cover flex-shrink-0" loading="lazy" />
+                          ) : (
+                            <div className="h-8 w-8 rounded-lg bg-slate-100 border border-slate-200 flex-shrink-0" />
+                          )}
                           <span className="font-black text-sm uppercase tracking-tighter truncate text-left" title={jogo.equipeB?.nome_equipe}>
                             {jogo.equipeB?.nome_equipe}
                           </span>
@@ -335,23 +349,33 @@ export default function Tabela() {
                 <ShieldCheck size={16} /> Melhor Defesa
               </h3>
               <ul className="space-y-4">
-                {data.defesa?.map((time, i) => (
-                  <li key={i} className="flex justify-between items-center">
-                    <div className="flex items-center gap-3">
-                      <span className="text-slate-300 font-black text-xs">#{i + 1}</span>
-                      <div>
-                        <p className="font-bold text-sm leading-none uppercase tracking-tighter">{time.nome_equipe}</p>
-                        <p className="text-[9px] text-slate-400 uppercase font-bold">
-                          Média: {(time.gc / (time.j || 1)).toFixed(2)}
-                        </p>
+                {data.defesa?.map((time, i) => {
+                  const logo = escudo(time.escudo_url)
+                  return (
+                    <li key={i} className="flex justify-between items-center">
+                      <div className="flex items-center gap-3">
+                        <span className="text-slate-300 font-black text-xs">#{i + 1}</span>
+
+                        {logo ? (
+                          <img src={logo} alt="" className="h-7 w-7 rounded-lg border border-slate-200 bg-white object-cover" loading="lazy" />
+                        ) : (
+                          <div className="h-7 w-7 rounded-lg bg-slate-100 border border-slate-200" />
+                        )}
+
+                        <div>
+                          <p className="font-bold text-sm leading-none uppercase tracking-tighter">{time.nome_equipe}</p>
+                          <p className="text-[9px] text-slate-400 uppercase font-bold">
+                            Média: {(time.gc / (time.j || 1)).toFixed(2)}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                    <div className="text-right">
-                      <span className="font-black text-lg text-blue-600">{time.gc}</span>
-                      <p className="text-[8px] font-black text-slate-400 uppercase">Gols C.</p>
-                    </div>
-                  </li>
-                ))}
+                      <div className="text-right">
+                        <span className="font-black text-lg text-blue-600">{time.gc}</span>
+                        <p className="text-[8px] font-black text-slate-400 uppercase">Gols C.</p>
+                      </div>
+                    </li>
+                  )
+                })}
               </ul>
             </div>
 
@@ -374,21 +398,39 @@ export default function Tabela() {
           </div>
         </div>
 
-        {/* RODAPÉ COM ASSINATURA DEV */}
+        {/* RODAPÉ */}
         <footer className="mt-20 pt-10 border-t border-slate-200">
-          {/* (mantive a lista pronta pra você usar depois, sem mudar layout atual) */}
           {patrocinadoresRodape.length > 0 && (
-            <div className="mb-10 flex flex-wrap justify-center items-center gap-10 md:gap-16 opacity-60 grayscale hover:grayscale-0 transition-all duration-700">
-              {patrocinadoresRodape.map(p => (
-                <a key={p.id} href={p.link_destino || '#'} target="_blank" rel="noopener noreferrer">
-                  <img
-                    src={p.banner_url}
-                    alt={p.nome_empresa || 'Parceiro'}
-                    className="h-10 md:h-14 w-auto object-contain hover:scale-110 transition-transform"
-                  />
-                </a>
-              ))}
-            </div>
+            <>
+              <div className="text-center mb-8">
+                <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-500">
+                  Parceiros Oficiais
+                </p>
+                <p className="text-[10px] font-bold text-slate-400 mt-1">
+                  Clique para conhecer os patrocinadores
+                </p>
+              </div>
+
+              <div className="mb-10 flex flex-wrap justify-center items-center gap-8 md:gap-12">
+                {patrocinadoresRodape.map(p => (
+                  <a
+                    key={p.id}
+                    href={p.link_destino || '#'}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="group"
+                  >
+                    <div className="bg-white border border-slate-200 rounded-2xl px-5 py-4 shadow-sm hover:shadow-xl hover:border-blue-300 transition-all duration-300">
+                      <img
+                        src={p.banner_url}
+                        alt={p.nome_empresa || 'Parceiro'}
+                        className="h-10 md:h-14 w-auto object-contain transition-transform duration-300 group-hover:scale-110"
+                      />
+                    </div>
+                  </a>
+                ))}
+              </div>
+            </>
           )}
 
           <div className="pt-8 border-t border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
@@ -439,12 +481,31 @@ function TabelaCard({ titulo, times, cor }) {
           <tbody className="divide-y divide-slate-50">
             {times.map((time, i) => {
               const saldo = time.sg !== undefined ? time.sg : (time.gp || 0) - (time.gc || 0)
+              const logo = escudo(time.escudo_url)
+
               return (
                 <tr key={time.equipe_id || i} className="hover:bg-slate-50 transition-colors group">
                   <td className={`p-3 text-center font-black ${i < 4 ? 'text-green-600' : 'text-slate-300'}`}>{i + 1}</td>
-                  <td className="p-3 font-bold text-slate-700 uppercase tracking-tighter truncate max-w-[120px] group-hover:text-blue-600 transition-colors">
-                    {time.nome_equipe}
+
+                  <td className="p-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                      {logo ? (
+                        <img
+                          src={logo}
+                          alt=""
+                          className="h-7 w-7 rounded-lg border border-slate-200 bg-white object-cover flex-shrink-0"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="h-7 w-7 rounded-lg bg-slate-100 border border-slate-200 flex-shrink-0" />
+                      )}
+
+                      <span className="font-bold text-slate-700 uppercase tracking-tighter truncate group-hover:text-blue-600 transition-colors">
+                        {time.nome_equipe}
+                      </span>
+                    </div>
                   </td>
+
                   <td className="p-3 text-center font-black text-slate-900 text-base">{time.pts}</td>
                   <td className="p-3 text-center text-slate-400 font-medium">{time.j}</td>
                   <td className="p-3 text-center font-bold text-slate-600">{saldo}</td>

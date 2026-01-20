@@ -96,10 +96,10 @@ export async function GET(request) {
 
     const listaJogos = jogosData || []
 
-    // ✅ sem logo_url por enquanto
+    // ✅ Agora traz escudo_url (logo)
     const { data: equipes, error: errEq } = await supabase
       .from('equipes')
-      .select('id, nome_equipe')
+      .select('id, nome_equipe, escudo_url')
 
     if (errEq) {
       return new Response(JSON.stringify({ error: errEq.message }), { status: 500 })
@@ -118,11 +118,14 @@ export async function GET(request) {
         ...j,
         equipeA: {
           nome_equipe: timeA ? timeA.nome_equipe : traduzirOrigem(j.origem_a),
-          logo_url: null,
+          escudo_url: timeA?.escudo_url || null,
+          // compat: se algum front ainda usa logo_url
+          logo_url: timeA?.escudo_url || null,
         },
         equipeB: {
           nome_equipe: timeB ? timeB.nome_equipe : traduzirOrigem(j.origem_b),
-          logo_url: null,
+          escudo_url: timeB?.escudo_url || null,
+          logo_url: timeB?.escudo_url || null,
         },
       }
     })
