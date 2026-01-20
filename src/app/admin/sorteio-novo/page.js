@@ -8,6 +8,7 @@ import {
   Sparkles, Save, Mic, Info, Star
 } from 'lucide-react'
 import { createClient } from '@supabase/supabase-js'
+import { createPortal } from 'react-dom'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -18,6 +19,18 @@ const supabase = createClient(
 const CARD_WIDTH = 220
 const CARD_GAP = 10
 const GIRO_DURATION = 6
+
+// ============================================================
+// ✅ FULLSCREEN PORTAL — garante centralização real na viewport
+// (resolve o “vazio à esquerda / empurra para direita” quando
+// a página está dentro de layout com sidebar/transform)
+// ============================================================
+function FullscreenPortal({ children }) {
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => { setMounted(true) }, [])
+  if (!mounted) return null
+  return createPortal(children, document.body)
+}
 
 // ============================================================
 // ✅ ÁUDIO (SFX) — com “desbloqueio” no primeiro clique
@@ -125,7 +138,7 @@ function createSfx() {
 }
 
 // ============================================================
-// ✅ VOZ (TTS) — narrador esportivo (mais natural, menos robô)
+// ✅ VOZ (TTS) — narrador esportivo (masculino, “padrão fifa”)
 // ============================================================
 function useVoice() {
   const enabledRef = useRef(true)
@@ -133,37 +146,39 @@ function useVoice() {
 
   const norm = (s) => (s || '').toLowerCase()
 
-  const pickBestPt = () => {
+  const pickBestPtMale = () => {
     if (typeof window === 'undefined') return null
     const voices = window.speechSynthesis?.getVoices?.() || []
     if (!voices.length) return null
 
+    const isPt = (v) => norm(v.lang).includes('pt')
     const isPtBR = (v) => norm(v.lang).includes('pt-br')
 
-    // ✅ prioridade: pt-BR
-    const br = voices.filter(isPtBR)
+    const candidates = voices.filter(v => isPtBR(v) || isPt(v))
+    if (!candidates.length) return voices[0] || null
 
-    // tenta vozes mais “naturais” primeiro (geralmente Google / Neural quando disponível)
-    const prefer = (arr) => {
-      const google = arr.find(v => norm(v.name).includes('google'))
-      if (google) return google
+    // ✅ prioridade: Microsoft Daniel (pt-BR) -> outros “Daniel” -> vozes masculinas comuns -> fallback
+    const msDaniel =
+      candidates.find(v => norm(v.name).includes('microsoft') && norm(v.name).includes('daniel')) ||
+      candidates.find(v => norm(v.name).includes('daniel')) ||
+      candidates.find(v => norm(v.name).includes('ricardo')) ||
+      candidates.find(v => norm(v.name).includes('male')) ||
+      candidates.find(v => norm(v.name).includes('masc')) ||
+      null
 
-      const msDaniel = arr.find(v => norm(v.name).includes('microsoft') && norm(v.name).includes('daniel'))
-      if (msDaniel) return msDaniel
+    if (msDaniel) return msDaniel
 
-      const anyDaniel = arr.find(v => norm(v.name).includes('daniel'))
-      if (anyDaniel) return anyDaniel
+    // se tiver Google pt-BR disponível, pega como fallback (pode ser feminino, mas é natural)
+    const google = candidates.find(v => norm(v.name).includes('google'))
+    if (google) return google
 
-      return arr[0] || null
-    }
-
-    return prefer(br) || prefer(voices) || null
+    return candidates[0] || voices[0] || null
   }
 
   useEffect(() => {
     if (typeof window === 'undefined') return
     const load = () => {
-      const v = pickBestPt()
+      const v = pickBestPtMale()
       if (v) voiceRef.current = v
     }
     window.speechSynthesis.onvoiceschanged = load
@@ -178,7 +193,7 @@ function useVoice() {
   const clamp = (n, a, b) => Math.max(a, Math.min(b, n))
   const rand = (a, b) => a + Math.random() * (b - a)
 
-  // ✅ fala “narrador” com pausas naturais (sem vibrato robótico)
+  // ✅ narrador: voz mais “grave”, ritmo firme, pausas naturais
   const speakNarrador = (text, opts = {}) => {
     if (typeof window === 'undefined') return
     if (!enabledRef.current) return
@@ -187,12 +202,11 @@ function useVoice() {
     try {
       window.speechSynthesis.cancel()
 
-      const baseRate = opts.rate ?? 1.12
-      const basePitch = opts.pitch ?? 0.78
+      const baseRate = opts.rate ?? 1.06
+      const basePitch = opts.pitch ?? 0.66
       const volume = opts.volume ?? 1.0
-      const pauseMs = opts.pauseMs ?? 110
+      const pauseMs = opts.pauseMs ?? 130
 
-      // quebra por pontuação pra ficar natural
       const parts = String(text)
         .replace(/\s+/g, ' ')
         .trim()
@@ -207,9 +221,8 @@ function useVoice() {
         u.lang = 'pt-BR'
         u.voice = voiceRef.current || null
 
-        // variação bem leve (natural)
-        u.rate = clamp(baseRate + rand(-0.03, 0.02), 0.95, 1.25)
-        u.pitch = clamp(basePitch + rand(-0.02, 0.02), 0.70, 1.05)
+        u.rate = clamp(baseRate + rand(-0.02, 0.02), 0.92, 1.18)
+        u.pitch = clamp(basePitch + rand(-0.02, 0.02), 0.55, 0.90)
         u.volume = volume
 
         u.onend = () => {
@@ -224,7 +237,6 @@ function useVoice() {
     } catch {}
   }
 
-  // speak “normal” (neutro)
   const speak = (text, opts = {}) => {
     if (typeof window === 'undefined') return
     if (!enabledRef.current) return
@@ -236,11 +248,11 @@ function useVoice() {
       u.lang = 'pt-BR'
       u.voice = voiceRef.current || null
 
-      const baseRate = opts.rate ?? 1.06
-      const basePitch = opts.pitch ?? 0.86
+      const baseRate = opts.rate ?? 1.02
+      const basePitch = opts.pitch ?? 0.78
 
-      u.rate = clamp(baseRate + rand(-0.02, 0.02), 0.90, 1.20)
-      u.pitch = clamp(basePitch + rand(-0.02, 0.02), 0.75, 1.10)
+      u.rate = clamp(baseRate + rand(-0.02, 0.02), 0.90, 1.12)
+      u.pitch = clamp(basePitch + rand(-0.02, 0.02), 0.65, 0.95)
       u.volume = opts.volume ?? 1.0
 
       window.speechSynthesis.speak(u)
@@ -251,7 +263,7 @@ function useVoice() {
 }
 
 // ============================================================
-// UI: Barra de Patrocinadores
+// UI: Barra de Patrocinadores (TOP — mais VIVO, sem grayscale)
 // ============================================================
 function SponsorsTicker({ patrocinadores }) {
   const lista = patrocinadores && patrocinadores.length > 0
@@ -264,23 +276,32 @@ function SponsorsTicker({ patrocinadores }) {
   const loop = [...lista, ...lista, ...lista, ...lista, ...lista]
 
   return (
-    <div className="w-full bg-slate-950/80 border-y border-white/10 py-3 overflow-hidden relative mb-6 backdrop-blur-md z-40 h-16 flex items-center">
-      <div className="absolute inset-y-0 left-0 w-32 bg-gradient-to-r from-[#0F172A] to-transparent z-10"/>
-      <div className="absolute inset-y-0 right-0 w-32 bg-gradient-to-l from-[#0F172A] to-transparent z-10"/>
+    <div className="w-full border-y border-blue-500/20 py-3 overflow-hidden relative mb-6 backdrop-blur-md z-40 h-16 flex items-center bg-gradient-to-r from-[#020617] via-[#0B1224] to-[#020617]">
+      <div className="absolute inset-y-0 left-0 w-32 bg-gradient-to-r from-[#0B1224] to-transparent z-10"/>
+      <div className="absolute inset-y-0 right-0 w-32 bg-gradient-to-l from-[#0B1224] to-transparent z-10"/>
 
       <motion.div
         className="flex gap-16 whitespace-nowrap items-center"
         animate={{ x: [0, -2000] }}
-        transition={{ repeat: Infinity, duration: 60, ease: "linear" }}
+        transition={{ repeat: Infinity, duration: 55, ease: "linear" }}
       >
         {loop.map((pat, i) => (
-          <div key={i} className="flex items-center gap-3 opacity-80 grayscale hover:grayscale-0 hover:opacity-100 transition-all cursor-default">
+          <div
+            key={i}
+            className="flex items-center gap-3 opacity-95 hover:opacity-100 transition-all cursor-default"
+          >
             {pat.banner_url ? (
-              <img src={pat.banner_url} alt={pat.nome_empresa} className="h-10 w-auto object-contain max-w-[200px]" />
+              <img
+                src={pat.banner_url}
+                alt={pat.nome_empresa}
+                className="h-10 w-auto object-contain max-w-[220px] drop-shadow-[0_6px_18px_rgba(37,99,235,0.25)] saturate-150"
+              />
             ) : (
               <div className="flex items-center gap-2">
-                <Star size={14} className="text-yellow-500"/>
-                <span className="font-black uppercase text-sm text-slate-300 tracking-widest">{pat.nome_empresa || "PARCEIRO"}</span>
+                <Star size={14} className="text-yellow-400 drop-shadow-[0_0_12px_rgba(250,204,21,0.45)]"/>
+                <span className="font-black uppercase text-sm text-slate-100 tracking-widest drop-shadow-[0_2px_8px_rgba(0,0,0,0.55)]">
+                  {pat.nome_empresa || "PARCEIRO"}
+                </span>
               </div>
             )}
           </div>
@@ -342,7 +363,7 @@ function gerarCruzamentoRotativo(grupoA, grupoB) {
 }
 
 // ============================================================
-// Rolete
+// Rolete — LOGO DO TIME (sem patrocínio dentro da roleta)
 // ============================================================
 function BlazeRoulette({ items, onSpinEnd, vencedorParaGirar, patrocinadores, sfx }) {
   const [faixa, setFaixa] = useState([])
@@ -352,12 +373,7 @@ function BlazeRoulette({ items, onSpinEnd, vencedorParaGirar, patrocinadores, sf
 
   useEffect(() => {
     if (items.length > 0 && faixa.length === 0) {
-      const getRandomSponsor = () => {
-        if (!patrocinadores || patrocinadores.length === 0) return null
-        return patrocinadores[Math.floor(Math.random() * patrocinadores.length)]
-      }
-      const prepareItem = (item) => ({ ...item, sponsor: getRandomSponsor() })
-      setFaixa(items.slice(0, 15).map(prepareItem))
+      setFaixa(items.slice(0, 15))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items.length])
@@ -371,17 +387,11 @@ function BlazeRoulette({ items, onSpinEnd, vencedorParaGirar, patrocinadores, sf
     await sfx.click()
     await sfx.playSpin()
 
-    const getRandomSponsor = () => {
-      if (!patrocinadores || patrocinadores.length === 0) return null
-      return patrocinadores[Math.floor(Math.random() * patrocinadores.length)]
-    }
-    const prepareItem = (item) => ({ ...item, sponsor: getRandomSponsor() })
-
-    const startItem = prepareItem(items[0] || { nome_equipe: '...' })
-    const targetItem = prepareItem(target)
+    const startItem = (items[0] || { nome_equipe: '...', id: -1 })
+    const targetItem = target
 
     let fillers = []
-    let lastAdded = startItem.id
+    let lastAdded = startItem?.id ?? -1
 
     for (let i = 0; i < 50; i++) {
       let randomItem
@@ -389,16 +399,16 @@ function BlazeRoulette({ items, onSpinEnd, vencedorParaGirar, patrocinadores, sf
         randomItem = items[Math.floor(Math.random() * items.length)]
       } while (randomItem?.id === lastAdded && items.length > 1)
 
-      fillers.push(prepareItem(randomItem))
-      lastAdded = randomItem.id
+      fillers.push(randomItem)
+      lastAdded = randomItem?.id
     }
 
     if (fillers[fillers.length - 1]?.id === target.id && items.length > 1) {
       const replacement = items.find(t => t.id !== target.id) || fillers[fillers.length - 1]
-      fillers[fillers.length - 1] = prepareItem(replacement)
+      fillers[fillers.length - 1] = replacement
     }
 
-    const novaFaixa = [startItem, ...fillers, targetItem, ...items.slice(0, 3).map(prepareItem)]
+    const novaFaixa = [startItem, ...fillers, targetItem, ...items.slice(0, 3)]
     setFaixa(novaFaixa)
     setResetIndex(prev => prev + 1)
 
@@ -427,7 +437,7 @@ function BlazeRoulette({ items, onSpinEnd, vencedorParaGirar, patrocinadores, sf
 
       <div
         ref={containerRef}
-        className="w-full max-w-[1200px] h-[260px] bg-[#0f172a] border-y-[4px] border-slate-700 relative overflow-hidden shadow-2xl flex items-center rounded-2xl mx-auto"
+        className="w-full max-w-[1200px] h-[240px] bg-[#0f172a] border-y-[4px] border-slate-700 relative overflow-hidden shadow-2xl flex items-center rounded-2xl mx-auto"
       >
         <motion.div
           key={resetIndex}
@@ -436,17 +446,15 @@ function BlazeRoulette({ items, onSpinEnd, vencedorParaGirar, patrocinadores, sf
           style={{ display: 'flex', gap: `${CARD_GAP}px` }}
         >
           {faixa.map((item, i) => (
-            <div key={`${item.id}-${i}`} className="shrink-0 relative" style={{ width: CARD_WIDTH, height: 180 }}>
+            <div key={`${item.id}-${i}`} className="shrink-0 relative" style={{ width: CARD_WIDTH, height: 170 }}>
               <div className="w-full h-full rounded-2xl flex flex-col items-center justify-between p-3 text-center bg-gradient-to-b from-slate-800 to-slate-950 border-2 border-slate-700 shadow-xl relative overflow-hidden group">
                 <div className="flex-1 flex items-center justify-center w-full">
-                  <div className="w-20 h-20 bg-slate-900 rounded-full flex items-center justify-center border-2 border-white/5 shadow-inner group-hover:scale-110 transition-transform duration-500 overflow-hidden">
-                    {/* ✅ LOGO DO TIME SEMPRE EM 1º LUGAR */}
+                  <div className="w-24 h-24 bg-slate-900 rounded-full flex items-center justify-center border-2 border-white/5 shadow-inner group-hover:scale-110 transition-transform duration-500 overflow-hidden">
+                    {/* ✅ LOGO DO TIME (escudo_url -> logo_url) */}
                     {item.logo_url ? (
-                      <img src={item.logo_url} className="w-14 h-14 object-contain" alt={item.nome_equipe} />
-                    ) : item.sponsor?.banner_url ? (
-                      <img src={item.sponsor.banner_url} className="w-16 h-16 object-contain opacity-80" alt="Parceiro" />
+                      <img src={item.logo_url} className="w-16 h-16 object-contain" alt={item.nome_equipe} />
                     ) : (
-                      <Users size={32} className="text-slate-600" />
+                      <Users size={34} className="text-slate-600" />
                     )}
                   </div>
                 </div>
@@ -455,15 +463,6 @@ function BlazeRoulette({ items, onSpinEnd, vencedorParaGirar, patrocinadores, sf
                   <span className="text-sm font-black uppercase text-white leading-tight line-clamp-2 px-1 drop-shadow-md">
                     {item.nome_equipe}
                   </span>
-                </div>
-
-                <div className="w-full bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 rounded-lg py-1.5 border-t border-white/10 mt-1 flex flex-col items-center justify-center h-[35px]">
-                  <span className="text-[8px] text-slate-400 font-bold uppercase tracking-widest mb-0.5">PARCEIRO</span>
-                  {item.sponsor?.banner_url ? (
-                    <img src={item.sponsor.banner_url} className="h-4 object-contain max-w-[80px]" alt="Parceiro" />
-                  ) : (
-                    <span className="text-[9px] text-yellow-500 font-bold uppercase">OFICIAL</span>
-                  )}
                 </div>
               </div>
             </div>
@@ -574,42 +573,45 @@ function SorteioContent() {
     if (!somAtivo) return
 
     const frases = [
-      "Atenção, torcida! É noite de decisão! Vai começar o sorteio oficial!",
+      "Atenção, torcida! Clima de decisão! Vai começar o sorteio oficial!",
       "Tá valendo! Olho no telão! Começa agora o sorteio da competição!",
-      "Senhoras e senhores… clima de final! Vamos ao sorteio oficial!"
+      "Senhoras e senhores… segura a emoção! Vamos ao sorteio oficial!",
+      "É noite de futebol! A roleta vai girar… e a emoção tá no ar!"
     ]
-    voice.speakNarrador(frases[Math.floor(Math.random() * frases.length)], { rate: 1.12, pitch: 0.78, pauseMs: 120 })
+    voice.speakNarrador(frases[Math.floor(Math.random() * frases.length)], { rate: 1.06, pitch: 0.66, pauseMs: 140 })
   }
 
   const narrarResultado = (nome, letra) => {
     if (!somAtivo) return
 
     const frasesMataMata = [
-      `Atenção… está definido! ${nome}! Segue vivo na competição!`,
-      `Confirmado no palco! ${nome}! Tá dentro!`,
-      `É isso! ${nome}! Classificado!`
+      `Tá definido! ${nome}! Segue vivo na competição!`,
+      `É agora! ${nome}! Confirmado no chaveamento!`,
+      `Explode o telão! ${nome}! Tá dentro!`,
+      `A roleta parou… e deu ${nome}! Classificado!`
     ]
 
     const frasesGrupo = [
-      `No telão… ${nome}! Grupo ${letra}!`,
+      `Olha no telão… ${nome}! Grupo ${letra}!`,
       `Tá definido! ${nome}! Grupo ${letra}!`,
-      `Olha quem chegou! ${nome}! Grupo ${letra}!`,
-      `Confirma aí! ${nome}! Grupo ${letra}!`
+      `Chegou com moral! ${nome}! Grupo ${letra}!`,
+      `Confirma aí! ${nome}! Grupo ${letra}!`,
+      `A roleta parou… ${nome}! Vai pro Grupo ${letra}!`
     ]
 
     const pick = (estiloGrupo === 'MATA_MATA_PURO' ? frasesMataMata : frasesGrupo)
-    voice.speakNarrador(pick[Math.floor(Math.random() * pick.length)], { rate: 1.14, pitch: 0.78, pauseMs: 110 })
+    voice.speakNarrador(pick[Math.floor(Math.random() * pick.length)], { rate: 1.07, pitch: 0.66, pauseMs: 135 })
   }
 
   const narrarFim = () => {
     if (!somAtivo) return
 
     const frases = [
-      "Sorteio encerrado! Agora é com vocês! Partiu tabela oficial!",
-      "Tá pronto! Grupos definidos! Emoção garantida na competição!",
-      "Fim de sorteio! A bola vai rolar… e a tabela tá no ar!"
+      "Sorteio encerrado! Grupos definidos! Agora é bola rolando!",
+      "Tá pronto! Emoção garantida! Partiu tabela oficial!",
+      "Fim de sorteio! A competição tá desenhada… e promete demais!"
     ]
-    voice.speakNarrador(frases[Math.floor(Math.random() * frases.length)], { rate: 1.10, pitch: 0.78, pauseMs: 120 })
+    voice.speakNarrador(frases[Math.floor(Math.random() * frases.length)], { rate: 1.05, pitch: 0.66, pauseMs: 150 })
   }
 
   const prepararShow = async () => {
@@ -890,198 +892,200 @@ function SorteioContent() {
   }
 
   return (
-    <main className="fixed inset-0 bg-[#0F172A] text-white p-4 font-sans overflow-hidden bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-blue-900/20 via-[#0F172A] to-[#020617] z-[9999]">
-      <div className="w-full max-w-[1600px] mx-auto h-full flex flex-col">
-        <div className="flex justify-between items-center mb-4 border-b border-white/5 pb-4">
-          <button onClick={() => router.back()} className="text-slate-500 hover:text-white uppercase text-xs font-bold flex items-center gap-1">
-            <ChevronLeft size={14} /> Cancelar
-          </button>
-
-          <div className="flex items-center gap-3">
-            <button
-              onClick={async () => {
-                setSomAtivo(v => !v)
-                if (sfxRef.current) await sfxRef.current.click()
-              }}
-              className={`text-[10px] uppercase font-black px-3 py-2 rounded-xl border transition-all ${
-                somAtivo ? 'bg-blue-600/20 border-blue-500/40 text-blue-200' : 'bg-slate-900/40 border-white/10 text-slate-400'
-              }`}
-              title="Ativar/Desativar Som e Voz"
-            >
-              {somAtivo ? 'Som: ON' : 'Som: OFF'}
+    <FullscreenPortal>
+      <main className="fixed left-0 top-0 w-screen h-screen bg-[#0F172A] text-white p-4 font-sans overflow-hidden bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-blue-900/20 via-[#0F172A] to-[#020617] z-[9999]">
+        <div className="w-full max-w-[1600px] mx-auto h-full flex flex-col">
+          <div className="flex justify-between items-center mb-4 border-b border-white/5 pb-4">
+            <button onClick={() => router.back()} className="text-slate-500 hover:text-white uppercase text-xs font-bold flex items-center gap-1">
+              <ChevronLeft size={14} /> Cancelar
             </button>
 
-            <h1 className="text-2xl md:text-3xl font-black italic uppercase tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-400">
-              SORTEIO <span className="text-blue-500">AO VIVO</span>
-            </h1>
-          </div>
-        </div>
-
-        {/* CARD INFORMATIVO */}
-        <motion.div initial={{ y: -20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="bg-blue-900/30 border border-blue-500/30 p-3 rounded-xl mb-6 flex items-center gap-3">
-          <Info className="text-blue-400 shrink-0" size={20} />
-          <div>
-            <p className="text-[10px] uppercase font-bold text-blue-400 tracking-widest">Modo Atual</p>
-            <p className="text-sm font-medium text-blue-100">{getDescricaoModo()}</p>
-          </div>
-        </motion.div>
-
-        {fase === 'selecao' && (
-          <div className="flex-1 flex flex-col items-center justify-center">
-            <div className="bg-slate-900/50 border border-white/10 p-8 rounded-[3rem] backdrop-blur-xl shadow-2xl w-full max-w-5xl mx-auto">
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-xl font-black uppercase flex items-center gap-2">
-                  <Users className="text-blue-500" /> Confirmar Times
-                </h2>
-                <div className="text-right">
-                  <p className="text-xs text-slate-400 uppercase font-bold">Serão divididos em</p>
-                  <p className="text-2xl font-black text-white">{qtdGrupos} GRUPOS</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3 mb-8 max-h-[50vh] overflow-y-auto pr-2 custom-scrollbar">
-                {equipes.map(eq => {
-                  const active = selecionadas.find(s => s.id === eq.id)
-                  return (
-                    <button
-                      key={eq.id}
-                      onClick={() => active
-                        ? setSelecionadas(selecionadas.filter(s => s.id !== eq.id))
-                        : setSelecionadas([...selecionadas, eq])
-                      }
-                      className={`p-3 rounded-xl border transition-all flex items-center gap-2 group ${
-                        active ? 'bg-blue-600 border-blue-500' : 'bg-slate-800/50 border-white/5'
-                      }`}
-                    >
-                      {active ? <CheckCircle2 size={14} className="text-white"/> : <div className="w-3.5 h-3.5 rounded-full border border-slate-500"/>}
-                      <span className={`font-bold uppercase text-xs truncate ${active ? 'text-white' : 'text-slate-400'}`}>
-                        {eq.nome_equipe}
-                      </span>
-                    </button>
-                  )
-                })}
-              </div>
-
-              <div className="flex justify-center">
-                <button
-                  onClick={prepararShow}
-                  disabled={selecionadas.length < qtdGrupos}
-                  className="group relative px-10 py-5 bg-white text-slate-950 font-black text-lg rounded-full uppercase italic tracking-widest hover:scale-105 transition-all shadow-[0_0_40px_rgba(255,255,255,0.2)] disabled:opacity-50 disabled:hover:scale-100"
-                >
-                  <span className="flex items-center gap-2 relative z-10">
-                    <Play size={20} fill="currentColor" /> INICIAR SHOW
-                  </span>
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {fase === 'sorteio' && (
-          <div className="grid grid-rows-[auto_1fr] h-full gap-4">
-            <div className="flex flex-col items-center justify-center min-h-[350px] w-full">
-              <SponsorsTicker patrocinadores={patrocinadores} />
-
-              <BlazeRoulette
-                items={poteSorteio}
-                onSpinEnd={onRoletaParou}
-                vencedorParaGirar={vencedorAtual}
-                patrocinadores={patrocinadores}
-                sfx={sfxRef.current}
-              />
-
-              <div className="mt-6 h-20 flex items-center justify-center w-full">
-                {!sorteando && poteSorteio.length > 0 ? (
-                  <button
-                    onClick={sortearProximo}
-                    className="bg-blue-600 hover:bg-blue-500 text-white font-black text-2xl px-12 py-4 rounded-2xl uppercase shadow-[0_0_50px_rgba(37,99,235,0.5)] animate-pulse hover:animate-none transition-transform active:scale-95 flex items-center gap-3"
-                  >
-                    <Mic /> SORTEAR PRÓXIMO
-                  </button>
-                ) : sorteando ? (
-                  <div className="text-blue-400 font-black text-xl uppercase tracking-[0.5em] animate-pulse">Sorteando...</div>
-                ) : null}
-              </div>
-            </div>
-
-            <div className={`grid gap-4 w-full items-start overflow-y-auto pb-10 mx-auto ${
-              qtdGrupos === 2 ? 'grid-cols-2' : qtdGrupos === 3 ? 'grid-cols-3' : 'grid-cols-2 lg:grid-cols-4'
-            }`}>
-              {Array.from({ length: qtdGrupos }).map((_, idx) => (
-                <div
-                  key={idx}
-                  className={`bg-slate-900/50 border p-4 rounded-2xl transition-all ${
-                    grupoAtualIndex === idx && !sorteando && poteSorteio.length > 0
-                      ? 'border-yellow-500/50 shadow-[0_0_20px_rgba(234,179,8,0.2)] scale-[1.02]'
-                      : 'border-white/10'
-                  }`}
-                >
-                  <div className="flex justify-between items-center mb-4 border-b border-white/5 pb-2">
-                    <h3 className={`font-black uppercase text-xl ${grupoAtualIndex === idx ? 'text-yellow-400' : 'text-slate-500'}`}>
-                      Grupo {letras[idx]}
-                    </h3>
-                    <span className="bg-slate-800 text-white text-xs px-2 py-1 rounded font-bold">
-                      {grupos[idx]?.length || 0}
-                    </span>
-                  </div>
-
-                  <div className="space-y-2">
-                    <AnimatePresence>
-                      {grupos[idx]?.map((time, tIdx) => (
-                        <motion.div
-                          key={time.id}
-                          initial={{ opacity: 0, x: -20 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          className="bg-slate-800 p-3 rounded-lg border border-white/5 flex justify-between items-center"
-                        >
-                          <span className="font-bold text-sm text-slate-200 truncate">{time.nome_equipe}</span>
-                          <span className="text-[10px] font-black text-slate-500">{letras[idx]}{tIdx + 1}</span>
-                        </motion.div>
-                      ))}
-                    </AnimatePresence>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {fase === 'finalizado' && (
-          <div className="flex-1 flex flex-col items-center justify-center">
-            <motion.div
-              initial={{ scale: 0.5, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              className="bg-slate-900/80 border border-green-500/30 p-12 rounded-[3rem] text-center backdrop-blur-xl shadow-[0_0_100px_rgba(34,197,94,0.2)]"
-            >
-              <Sparkles className="text-green-400 mx-auto mb-6 w-24 h-24 animate-pulse"/>
-              <h2 className="text-5xl font-black uppercase italic text-white mb-2">Sorteio Concluído!</h2>
-              <p className="text-slate-400 text-lg mb-8">Todos os grupos foram definidos.</p>
-
+            <div className="flex items-center gap-3">
               <button
-                onClick={salvarEGerar}
-                disabled={loading}
-                className="bg-green-600 hover:bg-green-500 text-white font-black px-12 py-5 rounded-2xl uppercase text-xl shadow-xl flex items-center gap-3 mx-auto hover:scale-105 transition-all"
+                onClick={async () => {
+                  setSomAtivo(v => !v)
+                  if (sfxRef.current) await sfxRef.current.click()
+                }}
+                className={`text-[10px] uppercase font-black px-3 py-2 rounded-xl border transition-all ${
+                  somAtivo ? 'bg-blue-600/20 border-blue-500/40 text-blue-200' : 'bg-slate-900/40 border-white/10 text-slate-400'
+                }`}
+                title="Ativar/Desativar Som e Voz"
               >
-                {loading ? <Loader2 className="animate-spin"/> : <Save/>} Gerar Tabela Oficial
+                {somAtivo ? 'Som: ON' : 'Som: OFF'}
               </button>
-            </motion.div>
-          </div>
-        )}
 
-        <div className="w-full flex justify-end py-4 border-t border-white/5 mt-4">
-          <a
-            href="https://wa.me/5547997037512"
-            target="_blank"
-            className="flex items-center gap-2 opacity-30 hover:opacity-100 transition-all duration-500 group cursor-pointer"
-          >
-            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 group-hover:text-blue-400">
-              System by <span className="text-white border-b border-blue-500/50">RC ENTERPRISE</span>
-            </span>
-            <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse shadow-[0_0_8px_#22c55e]" />
-          </a>
+              <h1 className="text-2xl md:text-3xl font-black italic uppercase tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-400">
+                SORTEIO <span className="text-blue-500">AO VIVO</span>
+              </h1>
+            </div>
+          </div>
+
+          {/* CARD INFORMATIVO */}
+          <motion.div initial={{ y: -20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="bg-blue-900/30 border border-blue-500/30 p-3 rounded-xl mb-6 flex items-center gap-3">
+            <Info className="text-blue-400 shrink-0" size={20} />
+            <div>
+              <p className="text-[10px] uppercase font-bold text-blue-400 tracking-widest">Modo Atual</p>
+              <p className="text-sm font-medium text-blue-100">{getDescricaoModo()}</p>
+            </div>
+          </motion.div>
+
+          {fase === 'selecao' && (
+            <div className="flex-1 flex flex-col items-center justify-center">
+              <div className="bg-slate-900/50 border border-white/10 p-8 rounded-[3rem] backdrop-blur-xl shadow-2xl w-full max-w-5xl mx-auto">
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-xl font-black uppercase flex items-center gap-2">
+                    <Users className="text-blue-500" /> Confirmar Times
+                  </h2>
+                  <div className="text-right">
+                    <p className="text-xs text-slate-400 uppercase font-bold">Serão divididos em</p>
+                    <p className="text-2xl font-black text-white">{qtdGrupos} GRUPOS</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3 mb-8 max-h-[50vh] overflow-y-auto pr-2 custom-scrollbar">
+                  {equipes.map(eq => {
+                    const active = selecionadas.find(s => s.id === eq.id)
+                    return (
+                      <button
+                        key={eq.id}
+                        onClick={() => active
+                          ? setSelecionadas(selecionadas.filter(s => s.id !== eq.id))
+                          : setSelecionadas([...selecionadas, eq])
+                        }
+                        className={`p-3 rounded-xl border transition-all flex items-center gap-2 group ${
+                          active ? 'bg-blue-600 border-blue-500' : 'bg-slate-800/50 border-white/5'
+                        }`}
+                      >
+                        {active ? <CheckCircle2 size={14} className="text-white"/> : <div className="w-3.5 h-3.5 rounded-full border border-slate-500"/>}
+                        <span className={`font-bold uppercase text-xs truncate ${active ? 'text-white' : 'text-slate-400'}`}>
+                          {eq.nome_equipe}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+
+                <div className="flex justify-center">
+                  <button
+                    onClick={prepararShow}
+                    disabled={selecionadas.length < qtdGrupos}
+                    className="group relative px-10 py-5 bg-white text-slate-950 font-black text-lg rounded-full uppercase italic tracking-widest hover:scale-105 transition-all shadow-[0_0_40px_rgba(255,255,255,0.2)] disabled:opacity-50 disabled:hover:scale-100"
+                  >
+                    <span className="flex items-center gap-2 relative z-10">
+                      <Play size={20} fill="currentColor" /> INICIAR SHOW
+                    </span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {fase === 'sorteio' && (
+            <div className="grid grid-rows-[auto_1fr] h-full gap-4 w-full">
+              <div className="flex flex-col items-center justify-center min-h-[350px] w-full">
+                <SponsorsTicker patrocinadores={patrocinadores} />
+
+                <BlazeRoulette
+                  items={poteSorteio}
+                  onSpinEnd={onRoletaParou}
+                  vencedorParaGirar={vencedorAtual}
+                  patrocinadores={patrocinadores}
+                  sfx={sfxRef.current}
+                />
+
+                <div className="mt-6 h-20 flex items-center justify-center w-full">
+                  {!sorteando && poteSorteio.length > 0 ? (
+                    <button
+                      onClick={sortearProximo}
+                      className="bg-blue-600 hover:bg-blue-500 text-white font-black text-2xl px-12 py-4 rounded-2xl uppercase shadow-[0_0_50px_rgba(37,99,235,0.5)] animate-pulse hover:animate-none transition-transform active:scale-95 flex items-center gap-3"
+                    >
+                      <Mic /> SORTEAR PRÓXIMO
+                    </button>
+                  ) : sorteando ? (
+                    <div className="text-blue-400 font-black text-xl uppercase tracking-[0.5em] animate-pulse">Sorteando...</div>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className={`w-full max-w-[1600px] mx-auto grid gap-4 items-start overflow-y-auto pb-10 px-1 overflow-x-hidden ${
+                qtdGrupos === 2 ? 'grid-cols-2' : qtdGrupos === 3 ? 'grid-cols-3' : 'grid-cols-2 lg:grid-cols-4'
+              }`}>
+                {Array.from({ length: qtdGrupos }).map((_, idx) => (
+                  <div
+                    key={idx}
+                    className={`bg-slate-900/50 border p-4 rounded-2xl transition-all ${
+                      grupoAtualIndex === idx && !sorteando && poteSorteio.length > 0
+                        ? 'border-yellow-500/50 shadow-[0_0_20px_rgba(234,179,8,0.2)] scale-[1.02]'
+                        : 'border-white/10'
+                    }`}
+                  >
+                    <div className="flex justify-between items-center mb-4 border-b border-white/5 pb-2">
+                      <h3 className={`font-black uppercase text-xl ${grupoAtualIndex === idx ? 'text-yellow-400' : 'text-slate-500'}`}>
+                        Grupo {letras[idx]}
+                      </h3>
+                      <span className="bg-slate-800 text-white text-xs px-2 py-1 rounded font-bold">
+                        {grupos[idx]?.length || 0}
+                      </span>
+                    </div>
+
+                    <div className="space-y-2">
+                      <AnimatePresence>
+                        {grupos[idx]?.map((time, tIdx) => (
+                          <motion.div
+                            key={time.id}
+                            initial={{ opacity: 0, x: -20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            className="bg-slate-800 p-3 rounded-lg border border-white/5 flex justify-between items-center"
+                          >
+                            <span className="font-bold text-sm text-slate-200 truncate">{time.nome_equipe}</span>
+                            <span className="text-[10px] font-black text-slate-500">{letras[idx]}{tIdx + 1}</span>
+                          </motion.div>
+                        ))}
+                      </AnimatePresence>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {fase === 'finalizado' && (
+            <div className="flex-1 flex flex-col items-center justify-center">
+              <motion.div
+                initial={{ scale: 0.5, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                className="bg-slate-900/80 border border-green-500/30 p-12 rounded-[3rem] text-center backdrop-blur-xl shadow-[0_0_100px_rgba(34,197,94,0.2)]"
+              >
+                <Sparkles className="text-green-400 mx-auto mb-6 w-24 h-24 animate-pulse"/>
+                <h2 className="text-5xl font-black uppercase italic text-white mb-2">Sorteio Concluído!</h2>
+                <p className="text-slate-400 text-lg mb-8">Todos os grupos foram definidos.</p>
+
+                <button
+                  onClick={salvarEGerar}
+                  disabled={loading}
+                  className="bg-green-600 hover:bg-green-500 text-white font-black px-12 py-5 rounded-2xl uppercase text-xl shadow-xl flex items-center gap-3 mx-auto hover:scale-105 transition-all"
+                >
+                  {loading ? <Loader2 className="animate-spin"/> : <Save/>} Gerar Tabela Oficial
+                </button>
+              </motion.div>
+            </div>
+          )}
+
+          <div className="w-full flex justify-end py-4 border-t border-white/5 mt-4">
+            <a
+              href="https://wa.me/5547997037512"
+              target="_blank"
+              className="flex items-center gap-2 opacity-30 hover:opacity-100 transition-all duration-500 group cursor-pointer"
+            >
+              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 group-hover:text-blue-400">
+                System by <span className="text-white border-b border-blue-500/50">RC ENTERPRISE</span>
+              </span>
+              <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse shadow-[0_0_8px_#22c55e]" />
+            </a>
+          </div>
         </div>
-      </div>
-    </main>
+      </main>
+    </FullscreenPortal>
   )
 }
 
