@@ -15,7 +15,7 @@ export async function GET() {
     // 1. Busca as configurações de vagas na tabela config_site (gerenciada pelo Admin)
     const { data: config } = await supabase
       .from('config_site')
-      .select('vagas_futsal, vagas_suiço')
+      .select('vagas_futsal, vagas_society')
       .eq('id', 1)
       .single()
     
@@ -29,9 +29,9 @@ export async function GET() {
       .from('equipes')
       .select('modalidade')
 
-    // 4. Contagem por modalidade (FUTSAL e SOCIETY/SUICO)
+    // 4. Contagem por modalidade (FUTSAL e SOCIETY/SUIÇO)
     const nFutsal = equipes?.filter(e => e.modalidade === 'FUTSAL').length || 0
-    const nSociety = equipes?.filter(e => e.modalidade === 'SOCIETY' || e.modalidade === 'SUICO').length || 0
+    const nSociety = equipes?.filter(e => e.modalidade === 'SOCIETY' || e.modalidade === 'SUIÇO').length || 0
 
     // 5. Retorna o JSON com headers de proibição de cache
     const responseData = {
