@@ -66,7 +66,7 @@ export default function AdminPanel() {
     setLoading(true)
     try {
       const [cfgRes, teamsRes, patroRes] = await Promise.all([
-        fetch('/api/config', { cache: 'no-store' }),
+        fetch(`/api/config?admin=1&t=${Date.now()}`, { headers: { 'x-admin-pin': senha }, cache: 'no-store' }),
         fetch('/api/admin/teams', { headers: { 'x-admin-pin': senha }, cache: 'no-store' }),
         fetch('/api/admin/patrocinios', { cache: 'no-store' })
       ])
