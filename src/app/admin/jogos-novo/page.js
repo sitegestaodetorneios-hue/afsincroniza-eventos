@@ -150,7 +150,15 @@ export default function GestaoJogosModelo() {
         .select('*, equipes(*)')
         .eq('etapa_id', Number(id))
 
-      const listaTimes = timesData?.map(t => ({ ...t.equipes, grupo: t.grupo })) || []
+      const listaTimes = timesData?.map(t => {
+  const eq = t.equipes || {}
+  return {
+    ...eq,
+    grupo: t.grupo,
+    // normaliza igual você fez no sorteio
+    logo_url: eq.logo_url || eq.escudo_url || eq.escudo || eq.logo || null
+  }
+}) || []
       setTimesDaEtapa(listaTimes)
 
       const mapaTimes = {}
@@ -1089,7 +1097,7 @@ function GameCard({ jogo, onUpdate, pin, allTeams }) {
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-2 truncate">
                 <div className="w-5 h-5 flex items-center justify-center bg-slate-50 rounded-full border border-slate-100 overflow-hidden">
-                  {jogo.equipeA?.scudo_url ? <img src={jogo.equipeA.scudo_url} className="w-full h-full object-contain" /> : <Shield size={10} className="text-slate-300" />}
+                  {jogo.equipeA?.escudo_url ? <img src={jogo.equipeA.escudo_url} className="w-full h-full object-contain" /> : <Shield size={10} className="text-slate-300" />}
                 </div>
                 <span className="font-bold text-sm text-slate-800 truncate">{nomeA}</span>
               </div>
@@ -1106,7 +1114,7 @@ function GameCard({ jogo, onUpdate, pin, allTeams }) {
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-2 truncate">
                 <div className="w-5 h-5 flex items-center justify-center bg-slate-50 rounded-full border border-slate-100 overflow-hidden">
-                  {!isFolga && jogo.equipeB?.scudo_url ? <img src={jogo.equipeB.scudo_url} className="w-full h-full object-contain" /> : <Shield size={10} className="text-slate-300" />}
+                  {!isFolga && jogo.equipeB?.escudo_url ? <img src={jogo.equipeB.escudo_url} className="w-full h-full object-contain" /> : <Shield size={10} className="text-slate-300" />}
                 </div>
                 <span className={`font-bold text-sm truncate ${isFolga ? 'text-amber-700' : 'text-slate-800'}`}>
                   {nomeB}

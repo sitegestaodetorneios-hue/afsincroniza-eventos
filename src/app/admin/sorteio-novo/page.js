@@ -504,8 +504,21 @@ function SorteioContent() {
   const [somAtivo, setSomAtivo] = useState(true)
   const sfxRef = useRef(null)
   const voice = useVoice()
+  // ✅ B) trava o body e compensa a scrollbar (resolve o empurrão pra direita)
+  useEffect(() => {
+    const prevOverflow = document.body.style.overflow
+    const prevPaddingRight = document.body.style.paddingRight
 
-  const getDescricaoModo = () => {
+    const sbw = window.innerWidth - document.documentElement.clientWidth
+    document.body.style.overflow = 'hidden'
+    if (sbw > 0) document.body.style.paddingRight = `${sbw}px`
+
+    return () => {
+      document.body.style.overflow = prevOverflow
+      document.body.style.paddingRight = prevPaddingRight
+    }
+  }, [])
+  function getDescricaoModo() {
     if (estiloGrupo === 'INTRA_GRUPO' || estiloGrupo === 'TODOS_CONTRA_TODOS') return "Todos contra Todos (Dentro do Grupo)"
     if (estiloGrupo === 'IDA_E_VOLTA') return "Ida e Volta (Revanche)"
     if (estiloGrupo === 'CRUZAMENTO' || estiloGrupo === 'INTER_GRUPO_TOTAL') return "Cruzamento Total: Todos do A contra Todos do B"
@@ -893,7 +906,7 @@ function SorteioContent() {
 
   return (
     <FullscreenPortal>
-      <main className="fixed inset-0 w-screen overflow-hidden bg-[#0F172A] text-white p-4 font-sans bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-blue-900/20 via-[#0F172A] to-[#020617] z-[9999]">
+      <main className="fixed inset-0 overflow-hidden bg-[#0F172A] text-white p-4 font-sans bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-blue-900/20 via-[#0F172A] to-[#020617] z-[9999]">
           <div className="w-full max-w-[1600px] mx-auto h-full flex flex-col min-w-0">
           <div className="flex justify-between items-center mb-4 border-b border-white/5 pb-4">
             <button onClick={() => router.back()} className="text-slate-500 hover:text-white uppercase text-xs font-bold flex items-center gap-1">
