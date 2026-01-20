@@ -978,74 +978,93 @@ function SorteioContent() {
           )}
 
           {fase === 'sorteio' && (
-              <div className="grid grid-rows-[auto_1fr] h-full gap-4 w-full min-w-0">
-              <div className="flex flex-col items-center justify-center min-h-[350px] w-full">
+            <div className="grid grid-rows-[auto_1fr] h-full gap-8 w-full min-w-0">
+              {/* ✅ Aumentei o gap-4 para gap-8 no grid acima para afastar tudo */}
+              
+              <div className="flex flex-col items-center justify-start w-full pt-4">
                 <SponsorsTicker patrocinadores={patrocinadores} />
 
-                <BlazeRoulette
-                  items={poteSorteio}
-                  onSpinEnd={onRoletaParou}
-                  vencedorParaGirar={vencedorAtual}
-                  patrocinadores={patrocinadores}
-                  sfx={sfxRef.current}
-                />
+                {/* A Roleta agora tem mb-12 (margin-bottom grande) para separar do botão */}
+                <div className="mb-8 w-full">
+                   <BlazeRoulette
+                    items={poteSorteio}
+                    onSpinEnd={onRoletaParou}
+                    vencedorParaGirar={vencedorAtual}
+                    patrocinadores={patrocinadores}
+                    sfx={sfxRef.current}
+                  />
+                </div>
 
-                <div className="mt-6 h-20 flex items-center justify-center w-full">
+                <div className="h-24 flex items-center justify-center w-full mb-8"> 
+                  {/* ✅ Adicionei mb-8 aqui para empurrar os Grupos pra baixo */}
                   {!sorteando && poteSorteio.length > 0 ? (
                     <button
                       onClick={sortearProximo}
-                      className="bg-blue-600 hover:bg-blue-500 text-white font-black text-2xl px-12 py-4 rounded-2xl uppercase shadow-[0_0_50px_rgba(37,99,235,0.5)] animate-pulse hover:animate-none transition-transform active:scale-95 flex items-center gap-3"
+                      className="bg-blue-600 hover:bg-blue-500 text-white font-black text-2xl px-16 py-6 rounded-3xl uppercase shadow-[0_0_60px_rgba(37,99,235,0.6)] animate-pulse hover:animate-none transition-transform active:scale-95 flex items-center gap-4 border-4 border-blue-400/30"
                     >
-                      <Mic /> SORTEAR PRÓXIMO
+                      <Mic size={32} /> SORTEAR PRÓXIMO
                     </button>
                   ) : sorteando ? (
-                    <div className="text-blue-400 font-black text-xl uppercase tracking-[0.5em] animate-pulse">Sorteando...</div>
+                    <div className="text-blue-400 font-black text-2xl uppercase tracking-[0.5em] animate-pulse flex flex-col items-center gap-2">
+                      <Loader2 className="animate-spin w-8 h-8"/>
+                      Sorteando...
+                    </div>
                   ) : null}
                 </div>
               </div>
 
-              <div className={`grid gap-4 w-full min-w-0 items-start overflow-y-auto pb-10 mx-auto ${
-                qtdGrupos === 2 ? 'grid-cols-2' : qtdGrupos === 3 ? 'grid-cols-3' : 'grid-cols-2 lg:grid-cols-4'
+              {/* ✅ GRUPOS: Adicionei mt-4 e padding extra no fundo */}
+              <div className={`grid gap-6 w-full min-w-0 items-start overflow-y-auto pb-20 mx-auto mt-4 px-4 ${
+                qtdGrupos === 2 ? 'grid-cols-2 max-w-5xl' : qtdGrupos === 3 ? 'grid-cols-3 max-w-7xl' : 'grid-cols-2 lg:grid-cols-4 max-w-[1800px]'
               }`}>
                 {Array.from({ length: qtdGrupos }).map((_, idx) => (
                   <div
                     key={idx}
-                    className={`bg-slate-900/50 border p-4 rounded-2xl transition-all ${
+                    className={`bg-slate-900/60 backdrop-blur-sm border p-5 rounded-3xl transition-all duration-500 ${
                       grupoAtualIndex === idx && !sorteando && poteSorteio.length > 0
-                        ? 'border-yellow-500/50 shadow-[0_0_20px_rgba(234,179,8,0.2)] scale-[1.02]'
-                        : 'border-white/10'
+                        ? 'border-yellow-400 shadow-[0_0_30px_rgba(250,204,21,0.3)] scale-105 z-10'
+                        : 'border-white/10 hover:border-white/20'
                     }`}
                   >
-                    <div className="flex justify-between items-center mb-4 border-b border-white/5 pb-2">
-                      <h3 className={`font-black uppercase text-xl ${grupoAtualIndex === idx ? 'text-yellow-400' : 'text-slate-500'}`}>
+                    <div className="flex justify-between items-center mb-4 border-b border-white/10 pb-3">
+                      <h3 className={`font-black uppercase text-2xl ${grupoAtualIndex === idx ? 'text-yellow-400 drop-shadow-sm' : 'text-slate-500'}`}>
                         Grupo {letras[idx]}
                       </h3>
-                      <span className="bg-slate-800 text-white text-xs px-2 py-1 rounded font-bold">
+                      <span className={`text-sm px-3 py-1 rounded-full font-bold shadow-inner ${grupoAtualIndex === idx ? 'bg-yellow-500 text-black' : 'bg-slate-800 text-slate-400'}`}>
                         {grupos[idx]?.length || 0}
                       </span>
                     </div>
 
-                    <div className="space-y-2">
-                      <AnimatePresence>
+                    <div className="space-y-2 min-h-[100px]">
+                      <AnimatePresence mode='popLayout'>
                         {grupos[idx]?.map((time, tIdx) => (
                           <motion.div
                             key={time.id}
-                            initial={{ opacity: 0, x: -20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            className="bg-slate-800 p-3 rounded-lg border border-white/5 flex justify-between items-center"
+                            initial={{ opacity: 0, x: -30, scale: 0.8 }}
+                            animate={{ opacity: 1, x: 0, scale: 1 }}
+                            transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                            className="bg-slate-800/80 p-3 rounded-xl border border-white/5 flex justify-between items-center shadow-md group hover:bg-slate-700/80 transition-colors"
                           >
-                            <span className="font-bold text-sm text-slate-200 truncate">{time.nome_equipe}</span>
-                            <span className="text-[10px] font-black text-slate-500">{letras[idx]}{tIdx + 1}</span>
+                            <div className="flex items-center gap-3 overflow-hidden">
+                                {time.logo_url && <img src={time.logo_url} className="w-6 h-6 object-contain opacity-80 group-hover:opacity-100" />}
+                                <span className="font-bold text-base text-slate-100 truncate">{time.nome_equipe}</span>
+                            </div>
+                            <span className="text-[10px] font-black text-slate-500 bg-slate-950/30 px-2 py-0.5 rounded ml-2">{letras[idx]}{tIdx + 1}</span>
                           </motion.div>
                         ))}
                       </AnimatePresence>
+                      {grupos[idx]?.length === 0 && (
+                        <div className="h-full flex items-center justify-center opacity-10 py-8">
+                            <Users size={40}/>
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}
               </div>
             </div>
           )}
-
+          
           {fase === 'finalizado' && (
             <div className="flex-1 flex flex-col items-center justify-center">
               <motion.div
