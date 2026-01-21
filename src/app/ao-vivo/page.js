@@ -409,31 +409,97 @@ export default function AoVivo() {
         )}
 
         {/* FOOTER RC ENTERPRISE */}
-        <footer className="mt-20 pt-10 border-t border-slate-200">
-          {patrocinadoresRodape.length > 0 && (
-            <div className="mb-12">
-              <p className="text-center text-[10px] font-black uppercase text-slate-400 tracking-[0.4em] mb-10 italic">Parceiros de Tecnologia e Realização</p>
-              <div className="flex flex-wrap justify-center items-center gap-10 md:gap-16 opacity-60 grayscale hover:grayscale-0 transition-all duration-700">
-                {patrocinadoresRodape.map(p => (
-                  <a key={p.id} href={p.link_destino || '#'} target="_blank" rel="noopener noreferrer">
-                    <img src={p.banner_url} alt={p.nome_empresa} className="h-10 md:h-14 w-auto object-contain hover:scale-110 transition-transform" />
-                  </a>
-                ))}
-              </div>
-            </div>
-          )}
+       {/* FOOTER RC ENTERPRISE */}
+<footer className="mt-20 pt-10 border-t border-slate-200">
+  {patrocinadoresRodape.length > 0 && (
+    <div className="mb-12">
+      <p className="text-center text-[10px] font-black uppercase text-slate-500 tracking-[0.4em] mb-6 italic">
+        Parceiros de Tecnologia e Realização
+      </p>
 
-          <div className="pt-8 border-t border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
-            <p className="text-[10px] text-slate-400 font-mono uppercase tracking-widest font-bold">© 2026 GESTÃO ESPORTIVA PREMIUM</p>
-            <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-slate-500">
-              <span>Desenvolvido por</span>
-              <a href="https://wa.me/5547997037512" target="_blank" rel="noopener noreferrer" className="text-blue-600 flex items-center gap-2 group">
-                <span className="border-b-2 border-blue-600/10 group-hover:border-blue-600 transition-all tracking-tighter">RC ENTERPRISE</span>
-                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-              </a>
-            </div>
-          </div>
-        </footer>
+      {/* Fundo mais “premium” */}
+      <div className="rounded-[2rem] border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-slate-100 p-6 md:p-8 shadow-sm">
+        <div className="flex flex-wrap justify-center items-center gap-6 md:gap-10">
+          {patrocinadoresRodape.map((p) => (
+            <a
+              key={p.id}
+              href={p.link_destino || '#'}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="group"
+              aria-label={p.nome_empresa || 'Patrocinador'}
+              title={p.nome_empresa || 'Patrocinador'}
+            >
+              {/* Card do patrocinador */}
+              <div className="
+                relative overflow-hidden rounded-2xl
+                bg-white/90 backdrop-blur
+                border border-slate-200
+                shadow-md
+                transition-all duration-300
+                group-hover:shadow-xl
+                group-hover:-translate-y-0.5
+                ring-1 ring-transparent
+                group-hover:ring-blue-200
+              ">
+                {/* Glow */}
+                <div className="
+                  pointer-events-none absolute inset-0 opacity-0
+                  group-hover:opacity-100 transition-opacity duration-300
+                  bg-gradient-to-r from-blue-500/10 via-fuchsia-500/10 to-emerald-500/10
+                " />
+
+                <div className="px-6 py-4 flex items-center justify-center">
+                  <img
+                    src={p.banner_url}
+                    alt={p.nome_empresa || 'Patrocinador'}
+                    className="
+                      h-10 md:h-12 w-auto object-contain
+                      saturate-125 contrast-110
+                      transition-transform duration-300
+                      group-hover:scale-110
+                    "
+                    loading="lazy"
+                  />
+                </div>
+
+                {/* Linha neon embaixo */}
+                <div className="
+                  h-[3px] w-full
+                  bg-gradient-to-r from-blue-500 via-fuchsia-500 to-emerald-500
+                  opacity-70
+                  group-hover:opacity-100 transition-opacity
+                " />
+              </div>
+            </a>
+          ))}
+        </div>
+      </div>
+    </div>
+  )}
+
+  <div className="pt-8 border-t border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
+    <p className="text-[10px] text-slate-400 font-mono uppercase tracking-widest font-bold">
+      © 2026 GESTÃO ESPORTIVA PREMIUM
+    </p>
+
+    <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+      <span>Desenvolvido por</span>
+      <a
+        href="https://wa.me/5547997037512"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-blue-600 flex items-center gap-2 group"
+      >
+        <span className="border-b-2 border-blue-600/10 group-hover:border-blue-600 transition-all tracking-tighter">
+          RC ENTERPRISE
+        </span>
+        <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+      </a>
+    </div>
+  </div>
+</footer>
+
       </div>
     </main>
   )

@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   ArrowLeft, PlusCircle, Save, CheckCircle, Loader2,
-  ClipboardList, Trash2, Shuffle, Trophy, Clock, Users, Calendar,
+  Trash2, Trophy, Clock, Calendar,
   StopCircle, Edit3, X, User, Lock, RotateCcw,
   ExternalLink, RefreshCcw, Settings
 } from 'lucide-react'
@@ -42,25 +42,15 @@ export default function AdminJogosAoVivo() {
   const [etapas, setEtapas] = useState([])
   const [etapaId, setEtapaId] = useState('')
   const [jogos, setJogos] = useState([])
-  const [todosTimes, setTodosTimes] = useState([])
   const [timesDaEtapa, setTimesDaEtapa] = useState([])
 
   // ✅ Status editável da etapa selecionada
   const [etapaSelecionada, setEtapaSelecionada] = useState(null)
   const [etapaStatusDraft, setEtapaStatusDraft] = useState('AGUARDANDO')
 
-  // Modal e Configurações
-  const [showModalTimes, setShowModalTimes] = useState(false)
-  const [selectedTeams, setSelectedTeams] = useState(new Set())
-
-  // Backup (mantido)
-  const [horData, setHorData] = useState('')
-  const [horInicio, setHorInicio] = useState('08:00')
-  const [horDuracao, setHorDuracao] = useState(50)
-  const [horIntervalo, setHorIntervalo] = useState(5)
-
-  const [sorteioDataBase, setSorteioDataBase] = useState('')
-  const [sorteioLimpar, setSorteioLimpar] = useState(true)
+  // UI
+  const [autoRefresh, setAutoRefresh] = useState(true)
+  const refreshTimerRef = useRef(null)
 
   // Criação de Nova Etapa
   const [novaEtapa, setNovaEtapa] = useState({
@@ -68,20 +58,6 @@ export default function AdminJogosAoVivo() {
     titulo: '',
     status: 'AGUARDANDO'
   })
-
-  // Novo Jogo Manual (Backup)
-  const [novoJogo, setNovoJogo] = useState({
-    rodada: '',
-    data_jogo: '',
-    equipe_a_id: '',
-    equipe_b_id: '',
-    tipo_jogo: 'GRUPO'
-  })
-
-  // UI
-  const [showBackup, setShowBackup] = useState(false)
-  const [autoRefresh, setAutoRefresh] = useState(true)
-  const refreshTimerRef = useRef(null)
 
   function auth() {
     if (pin === '2026') setAutenticado(true)
@@ -92,17 +68,11 @@ export default function AdminJogosAoVivo() {
   async function loadAll() {
     setLoading(true)
     try {
-      const [etRes, allTeamsRes] = await Promise.all([
-        fetch('/api/admin/etapas', { headers: { 'x-admin-pin': pin }, cache: 'no-store' }),
-        fetch('/api/admin/teams', { headers: { 'x-admin-pin': pin }, cache: 'no-store' })
-      ])
+      const etRes = await fetch('/api/admin/etapas', { headers: { 'x-admin-pin': pin }, cache: 'no-store' })
       const etData = await safeJson(etRes)
-      const teamsData = await safeJson(allTeamsRes)
       setEtapas(Array.isArray(etData) ? etData : [])
-      setTodosTimes(Array.isArray(teamsData) ? teamsData : [])
     } catch (e) {
       setEtapas([])
-      setTodosTimes([])
     } finally {
       setLoading(false)
     }
@@ -120,10 +90,7 @@ export default function AdminJogosAoVivo() {
     setEtapaId(idStr)
     setLoading(true)
 
-    // Reseta configurações de horário ao trocar de etapa para evitar erros
-    setHorData('')
-
-    // ✅ set etapa selecionada (para editar status) a partir da lista já carregada
+    // ✅ set etapa selecionada (para editar status)
     const eLocal = (Array.isArray(etapas) ? etapas : []).find(x => String(x.id) === idStr) || null
     setEtapaSelecionada(eLocal)
     setEtapaStatusDraft((eLocal?.status || 'AGUARDANDO').toUpperCase())
@@ -137,13 +104,13 @@ export default function AdminJogosAoVivo() {
       const dataJogos = await safeJson(resJogos)
       setJogos(Array.isArray(dataJogos) ? dataJogos : [])
 
-      // 2) Times da Etapa
-      const resGrupos = await fetch(`/api/admin/etapas/gerenciar-times?etapa_id=${idStr}`, {
+      // 2) Times da Etapa (mantém só para contador)
+      const resTimes = await fetch(`/api/admin/etapas/gerenciar-times?etapa_id=${idStr}`, {
         headers: { 'x-admin-pin': pin },
         cache: 'no-store'
       })
-      const dataGrupos = await safeJson(resGrupos)
-      setTimesDaEtapa(Array.isArray(dataGrupos) ? dataGrupos : [])
+      const dataTimes = await safeJson(resTimes)
+      setTimesDaEtapa(Array.isArray(dataTimes) ? dataTimes : [])
     } catch (e) {
       setJogos([])
       setTimesDaEtapa([])
@@ -227,7 +194,6 @@ export default function AdminJogosAoVivo() {
   }
 
   // ✅ ATUALIZAR STATUS DA ETAPA (já criada)
-  // IMPORTANTE: esse endpoint precisa aceitar PUT com { id, status }
   async function salvarStatusEtapa() {
     if (!etapaId) return alert('Selecione uma etapa.')
     if (!etapaStatusDraft) return
@@ -246,116 +212,8 @@ export default function AdminJogosAoVivo() {
       }
 
       await loadAll()
-      // recarrega dados da etapa selecionada (jogos/times)
       await selecionarEtapa(etapaId)
       alert('Status da etapa atualizado!')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  // --- IMPORTAÇÃO DE TIMES ---
-  function abrirSelecaoTimes() {
-    if (!etapaId) return alert('Selecione a etapa antes.')
-    setSelectedTeams(new Set())
-    setShowModalTimes(true)
-  }
-
-  async function confirmarImportacao() {
-    if (selectedTeams.size === 0) return alert('Selecione pelo menos 1 time.')
-    setLoading(true)
-    try {
-      const res = await fetch('/api/admin/etapas/gerenciar-times', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-admin-pin': pin },
-        body: JSON.stringify({
-          action: 'import_selected',
-          etapa_id: etapaId,
-          selected_ids: Array.from(selectedTeams)
-        })
-      })
-      const data = await safeJson(res)
-      if (!res.ok || data?.error) {
-        alert(`Erro: ${data?.error || 'Falha ao importar'}`)
-        return
-      }
-
-      setShowModalTimes(false)
-      await selecionarEtapa(etapaId)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  // --- GERAÇÃO DE JOGOS (AUTO / SORTEIO) ---
-  async function gerarJogosAuto() {
-    if (!etapaId) return alert('Selecione uma etapa!')
-
-    if (confirm('Deseja ver a animação do sorteio dos jogos? OK = Sorteio Animado / Cancelar = gerar direto')) {
-      router.push(`/admin/sorteio?etapa_id=${etapaId}`)
-      return
-    }
-
-    setLoading(true)
-    try {
-      const res = await fetch('/api/admin/sorteio', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-admin-pin': pin },
-        body: JSON.stringify({
-          etapa_id: Number(etapaId),
-          data_base: sorteioDataBase || null,
-          modo: 'BINGO',
-          limpar_existentes: sorteioLimpar
-        })
-      })
-      const data = await safeJson(res)
-      if (data?.error) alert(`ERRO: ${data.error}`)
-      else {
-        alert(`Sucesso! ${data.jogos_criados} jogos criados.`)
-        await selecionarEtapa(etapaId)
-      }
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  // --- BACKUP: AGENDA AUTOMÁTICA ---
-  async function aplicarHorarios() {
-    if (!etapaId) return alert('Selecione uma etapa!')
-    if (!horData) return alert('Preencha a DATA DA RODADA.')
-    setLoading(true)
-    try {
-      const res = await fetch('/api/admin/horarios', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-admin-pin': pin },
-        body: JSON.stringify({
-          etapa_id: Number(etapaId),
-          data_jogo: horData,
-          hora_inicio_base: horInicio,
-          duracao_min: Number(horDuracao),
-          intervalo_min: Number(horIntervalo)
-        })
-      })
-      const data = await safeJson(res)
-      alert(data.msg || data.error)
-      await selecionarEtapa(etapaId)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  // --- LIMPEZA E CRIAÇÃO MANUAL (BACKUP) ---
-  async function limparEtapa() {
-    if (!etapaId) return alert('Selecione uma etapa!')
-    if (!confirm('ATENÇÃO: ISSO APAGA TUDO DA ETAPA (JOGOS E VÍNCULOS DE TIMES). Confirmar?')) return
-    setLoading(true)
-    try {
-      await fetch('/api/admin/etapas/gerenciar-times', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-admin-pin': pin },
-        body: JSON.stringify({ action: 'clear', etapa_id: etapaId })
-      })
-      await selecionarEtapa(etapaId)
     } finally {
       setLoading(false)
     }
@@ -370,47 +228,6 @@ export default function AdminJogosAoVivo() {
     await selecionarEtapa(etapaId)
   }
 
-  async function criarJogoManual() {
-    if (!etapaId) return alert('Selecione uma etapa primeiro!')
-    if (!novoJogo.equipe_a_id) return alert('Selecione o Time A!')
-    if (!novoJogo.equipe_b_id) return alert('Selecione o Time B!')
-    if (novoJogo.equipe_a_id === novoJogo.equipe_b_id) return alert('Os times devem ser diferentes!')
-
-    setLoading(true)
-    try {
-      const payload = {
-        ...novoJogo,
-        etapa_id: Number(etapaId),
-        equipe_a_id: parseInt(novoJogo.equipe_a_id),
-        equipe_b_id: parseInt(novoJogo.equipe_b_id),
-        rodada: novoJogo.rodada ? parseInt(novoJogo.rodada) : 1
-      }
-      const res = await fetch('/api/admin/jogos', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-admin-pin': pin },
-        body: JSON.stringify(payload)
-      })
-      const data = await safeJson(res)
-      if (!res.ok || data?.error) alert(`Erro: ${data.error || 'Erro desconhecido'}`)
-      else {
-        setNovoJogo({ ...novoJogo, equipe_a_id: '', equipe_b_id: '', rodada: '' })
-        await selecionarEtapa(etapaId)
-      }
-    } catch (e) {
-      alert('Erro de conexão.')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  // --- Grupos (visão rápida) ---
-  const grupos = useMemo(() => {
-    const lista = Array.isArray(timesDaEtapa) ? timesDaEtapa : []
-    const a = lista.filter(t => t.grupo === 'A')
-    const b = lista.filter(t => t.grupo === 'B')
-    return { A: a, B: b }
-  }, [timesDaEtapa])
-
   // --- Jogos AO VIVO (somente EM_ANDAMENTO) ---
   const jogosAoVivo = useMemo(() => {
     return (Array.isArray(jogos) ? jogos : []).filter(j => j.status === 'EM_ANDAMENTO')
@@ -424,9 +241,9 @@ export default function AdminJogosAoVivo() {
           <div className="w-20 h-20 bg-blue-600 rounded-3xl rotate-6 flex items-center justify-center mx-auto mb-8 shadow-lg">
             <Lock className="text-white" size={36} />
           </div>
-          <h1 className="text-2xl font-black text-white uppercase mb-2">Tela Ao Vivo</h1>
+          <h1 className="text-2xl font-black text-white uppercase mb-2">Gestão de etapas</h1>
           <p className="text-xs text-slate-400 font-bold mb-6 uppercase tracking-widest">
-            Mostra somente jogos em andamento
+            Cria Etapa, altera para em andamento e finaliza
           </p>
 
           <input
@@ -451,58 +268,8 @@ export default function AdminJogosAoVivo() {
 
   return (
     <main className="min-h-screen bg-slate-50 py-10 px-4 md:px-10 relative text-slate-800">
-      {/* MODAL DE SELEÇÃO DE TIMES */}
-      {showModalTimes && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white w-full max-w-2xl rounded-3xl p-8 max-h-[80vh] flex flex-col shadow-2xl">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-2xl font-black text-slate-900 uppercase">Selecionar Times</h3>
-              <button onClick={() => setShowModalTimes(false)} className="bg-slate-100 p-2 rounded-full">
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto grid grid-cols-1 md:grid-cols-2 gap-3 p-2">
-              {todosTimes.map(team => {
-                const isSelected = selectedTeams.has(team.id)
-                return (
-                  <div
-                    key={team.id}
-                    onClick={() => {
-                      const next = new Set(selectedTeams)
-                      if (isSelected) next.delete(team.id)
-                      else next.add(team.id)
-                      setSelectedTeams(next)
-                    }}
-                    className={`p-4 rounded-xl border-2 cursor-pointer flex justify-between items-center ${
-                      isSelected ? 'border-blue-600 bg-blue-50' : 'border-slate-100'
-                    }`}
-                  >
-                    <div>
-                      <p className="font-bold text-slate-800">{team.nome_equipe}</p>
-                      <p className="text-[10px] uppercase font-bold text-slate-400">{team.modalidade} • {team.cidade}</p>
-                    </div>
-                    {isSelected && <CheckCircle className="text-blue-600" size={20} />}
-                  </div>
-                )
-              })}
-            </div>
-
-            <div className="pt-6 border-t mt-4 flex justify-between items-center">
-              <span className="font-bold text-slate-500">{selectedTeams.size} selecionados</span>
-              <button
-                onClick={confirmarImportacao}
-                disabled={loading}
-                className="bg-slate-900 text-white font-black py-3 px-8 rounded-xl hover:bg-black uppercase shadow-lg"
-              >
-                Confirmar Importação
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       <div className="max-w-7xl mx-auto">
+
         {/* HEADER */}
         <div className="flex justify-between items-center mb-8">
           <Link href="/admin" className="flex items-center gap-2 text-slate-500 hover:text-blue-600 font-bold text-sm uppercase">
@@ -546,7 +313,7 @@ export default function AdminJogosAoVivo() {
           </div>
         </div>
 
-        {/* 1) ETAPAS — criar, excluir, e ✅ alterar status da etapa já criada */}
+        {/* 1) ETAPAS */}
         <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-8 mb-8">
           <div className="flex justify-between items-center mb-6">
             <h2 className="font-black uppercase text-slate-900 text-lg flex items-center gap-2">
@@ -627,9 +394,8 @@ export default function AdminJogosAoVivo() {
                 <Save size={14} /> Salvar Status
               </button>
 
-              {/* atalhos rápidos */}
               <button
-                onClick={() => { setEtapaStatusDraft('EM_ANDAMENTO'); }}
+                onClick={() => { setEtapaStatusDraft('EM_ANDAMENTO') }}
                 disabled={!etapaId || loading}
                 className="bg-green-50 border border-green-200 text-green-700 font-black px-4 py-3 rounded-xl text-[10px] uppercase"
                 title="Preparar para Em andamento"
@@ -637,7 +403,7 @@ export default function AdminJogosAoVivo() {
                 Iniciar
               </button>
               <button
-                onClick={() => { setEtapaStatusDraft('FINALIZADA'); }}
+                onClick={() => { setEtapaStatusDraft('FINALIZADA') }}
                 disabled={!etapaId || loading}
                 className="bg-slate-100 border border-slate-200 text-slate-700 font-black px-4 py-3 rounded-xl text-[10px] uppercase"
                 title="Preparar para Finalizada"
@@ -682,75 +448,31 @@ export default function AdminJogosAoVivo() {
         {/* 2) AO VIVO — somente EM_ANDAMENTO */}
         {etapaId ? (
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
+
+            {/* CARD RESUMO (SEM BOTÕES, SEM GRUPOS) */}
             <div className="bg-slate-900 text-white rounded-3xl shadow-2xl shadow-slate-400 p-8 relative overflow-hidden">
               <div className="absolute top-0 right-0 p-8 opacity-5"><Trophy size={200} /></div>
 
               <div className="grid lg:grid-cols-3 gap-8 relative z-10">
                 <div className="bg-white/5 p-6 rounded-3xl border border-white/10">
                   <p className="text-blue-400 text-[10px] font-black uppercase tracking-widest mb-4">Times</p>
-                  <div className="flex justify-between items-end mb-6">
+                  <div className="flex justify-between items-end mb-2">
                     <span className="text-4xl font-black">{timesDaEtapa.length}</span>
                     <span className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Na etapa</span>
                   </div>
-                  <button
-                    onClick={abrirSelecaoTimes}
-                    className="w-full bg-blue-600 hover:bg-blue-500 py-3 rounded-xl font-bold text-xs uppercase flex items-center justify-center gap-2"
-                  >
-                    <Users size={16} /> Selecionar Times
-                  </button>
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                    Gerencie times / grupos / sorteio em Jogos-Novo
+                  </div>
                 </div>
 
-                <div className="lg:col-span-2 bg-white/5 p-6 rounded-3xl border border-white/10 grid grid-cols-2 gap-6 relative">
-                  <div>
-                    <p className="text-yellow-400 text-[10px] font-black uppercase tracking-widest mb-3 border-b border-white/10 pb-2">Grupo A</p>
-                    <ul className="text-xs font-medium text-slate-300 space-y-1">
-                      {grupos.A.map(t => <li key={t.id}>• {t.nome_equipe}</li>)}
-                      {grupos.A.length === 0 && <li className="text-slate-500">—</li>}
-                    </ul>
+                <div className="lg:col-span-2 bg-white/5 p-6 rounded-3xl border border-white/10">
+                  <p className="text-yellow-400 text-[10px] font-black uppercase tracking-widest mb-3 border-b border-white/10 pb-2">
+                    Gestão completa
+                  </p>
+                  <div className="text-xs font-bold text-slate-300">
+                    Abra <span className="text-white">Jogos-Novo</span> para editar grupos, importar times, gerar jogos e sorteios.
                   </div>
-                  <div>
-                    <p className="text-yellow-400 text-[10px] font-black uppercase tracking-widest mb-3 border-b border-white/10 pb-2">Grupo B</p>
-                    <ul className="text-xs font-medium text-slate-300 space-y-1">
-                      {grupos.B.map(t => <li key={t.id}>• {t.nome_equipe}</li>)}
-                      {grupos.B.length === 0 && <li className="text-slate-500">—</li>}
-                    </ul>
-                  </div>
-
-                  <Link
-                    href={`/admin/sorteio?etapa_id=${etapaId}`}
-                    className="absolute top-4 right-4 bg-slate-800 hover:bg-slate-700 py-2 px-4 rounded-lg font-bold text-[10px] uppercase flex items-center justify-center gap-2 border border-white/10 text-white"
-                  >
-                    <Shuffle size={12} /> Sorteio Animado
-                  </Link>
                 </div>
-              </div>
-
-              <div className="mt-8 flex justify-end gap-3 relative z-10">
-                <button
-                  onClick={gerarJogosAuto}
-                  disabled={loading}
-                  className="bg-white text-slate-900 hover:bg-slate-200 px-6 py-3 rounded-xl font-black text-xs uppercase flex items-center gap-2"
-                  title="Gerar jogos da etapa"
-                >
-                  <ClipboardList size={16} /> Gerar Jogos
-                </button>
-
-                <button
-                  onClick={limparEtapa}
-                  disabled={loading}
-                  className="bg-red-500/10 hover:bg-red-500/20 text-red-300 font-bold px-4 py-3 rounded-xl text-xs uppercase flex items-center gap-2 border border-red-500/30"
-                  title="Apagar jogos e vínculos de times"
-                >
-                  <Trash2 size={14} /> Reset Etapa
-                </button>
-
-                <button
-                  onClick={() => setShowBackup(v => !v)}
-                  className="bg-slate-800 hover:bg-slate-700 text-white font-black px-4 py-3 rounded-xl text-xs uppercase flex items-center gap-2 border border-white/10"
-                  title="Abrir/Fechar ferramentas de backup"
-                >
-                  {showBackup ? 'Ocultar backup' : 'Backup'}
-                </button>
               </div>
             </div>
 
@@ -784,109 +506,11 @@ export default function AdminJogosAoVivo() {
               ) : (
                 <div className="grid md:grid-cols-2 gap-6">
                   {jogosAoVivo.map((j) => (
-                    <GameCardAoVivo key={j.id} jogo={j} onUpdate={atualizarJogo} busy={loading} pin={pin} />
+                    <GameCardAoVivo key={j.id} jogo={j} onUpdate={atualizarJogo} busy={loading} />
                   ))}
                 </div>
               )}
             </div>
-
-            {/* BACKUP (opcional) */}
-            {showBackup && (
-              <div className="space-y-6 animate-in fade-in duration-200">
-                <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-8">
-                  <h3 className="font-black uppercase text-slate-900 text-lg mb-4">Backup • Agenda automática</h3>
-                  <div className="grid md:grid-cols-4 gap-4">
-                    <div>
-                      <label className="text-[10px] font-black uppercase text-slate-400">Data</label>
-                      <input type="date" className="w-full mt-1 p-3 rounded-xl border bg-white font-bold"
-                        value={horData} onChange={e => setHorData(e.target.value)} />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-black uppercase text-slate-400">Início</label>
-                      <input type="time" className="w-full mt-1 p-3 rounded-xl border bg-white font-bold text-center"
-                        value={horInicio} onChange={e => setHorInicio(e.target.value)} />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-black uppercase text-slate-400">Duração (min)</label>
-                      <input type="number" className="w-full mt-1 p-3 rounded-xl border bg-white font-bold text-center"
-                        value={horDuracao} onChange={e => setHorDuracao(e.target.value)} />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-black uppercase text-slate-400">Intervalo (min)</label>
-                      <input type="number" className="w-full mt-1 p-3 rounded-xl border bg-white font-bold text-center"
-                        value={horIntervalo} onChange={e => setHorIntervalo(e.target.value)} />
-                    </div>
-                  </div>
-
-                  <div className="mt-5 flex justify-end">
-                    <button
-                      onClick={aplicarHorarios}
-                      disabled={loading}
-                      className="bg-blue-600 hover:bg-blue-500 text-white font-black px-6 py-3 rounded-xl text-xs uppercase inline-flex items-center gap-2"
-                    >
-                      <Clock size={14} /> Aplicar Agenda
-                    </button>
-                  </div>
-                </div>
-
-                <div className="bg-slate-100 rounded-3xl p-6 border border-slate-200">
-                  <div className="flex items-center justify-between mb-3">
-                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Backup • Adição manual</p>
-                    <label className="text-[10px] font-black uppercase text-slate-500 flex items-center gap-2">
-                      <input type="checkbox" checked={sorteioLimpar} onChange={e => setSorteioLimpar(e.target.checked)} className="accent-blue-600" />
-                      Limpar ao gerar
-                    </label>
-                  </div>
-
-                  <div className="flex gap-3 items-center flex-wrap">
-                    <select
-                      className="p-3 rounded-xl border border-slate-200 text-xs font-bold uppercase bg-white outline-none"
-                      value={novoJogo.tipo_jogo}
-                      onChange={e => setNovoJogo({ ...novoJogo, tipo_jogo: e.target.value })}
-                    >
-                      <option value="GRUPO">Fase de Grupos</option>
-                      <option value="FINAL">Grande Final</option>
-                      <option value="DISPUTA_3">Disputa 3º Lugar</option>
-                    </select>
-
-                    <input
-                      className="p-3 rounded-xl border border-slate-200 text-xs w-24 bg-white font-bold outline-none"
-                      placeholder="Rodada"
-                      value={novoJogo.rodada}
-                      onChange={e => setNovoJogo({ ...novoJogo, rodada: e.target.value })}
-                    />
-
-                    <select
-                      className="flex-1 p-3 rounded-xl border border-slate-200 text-xs bg-white font-bold outline-none"
-                      value={novoJogo.equipe_a_id}
-                      onChange={e => setNovoJogo({ ...novoJogo, equipe_a_id: e.target.value })}
-                    >
-                      <option value="">Time A</option>
-                      {todosTimes.map(t => <option key={t.id} value={t.id}>{t.nome_equipe}</option>)}
-                    </select>
-
-                    <span className="font-black text-slate-300">VS</span>
-
-                    <select
-                      className="flex-1 p-3 rounded-xl border border-slate-200 text-xs bg-white font-bold outline-none"
-                      value={novoJogo.equipe_b_id}
-                      onChange={e => setNovoJogo({ ...novoJogo, equipe_b_id: e.target.value })}
-                    >
-                      <option value="">Time B</option>
-                      {todosTimes.map(t => <option key={t.id} value={t.id}>{t.nome_equipe}</option>)}
-                    </select>
-
-                    <button
-                      onClick={criarJogoManual}
-                      disabled={loading}
-                      className="bg-slate-900 text-white px-6 py-3 rounded-xl font-black text-xs hover:bg-black uppercase flex items-center gap-2"
-                    >
-                      {loading ? <Loader2 className="animate-spin" size={14} /> : <PlusCircle size={14} />} Adicionar
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
         ) : (
           <div className="text-center p-20 bg-slate-100 rounded-3xl border border-dashed border-slate-300">
@@ -902,7 +526,7 @@ export default function AdminJogosAoVivo() {
 // ======================================================
 // CARD AO VIVO — só mostra EM_ANDAMENTO (ações essenciais)
 // ======================================================
-function GameCardAoVivo({ jogo, onUpdate, busy, pin }) {
+function GameCardAoVivo({ jogo, onUpdate, busy }) {
   const [ga, setGa] = useState(jogo.gols_a ?? '')
   const [gb, setGb] = useState(jogo.gols_b ?? '')
   const [pa, setPa] = useState(jogo.penaltis_a ?? '')
@@ -963,6 +587,9 @@ function GameCardAoVivo({ jogo, onUpdate, busy, pin }) {
               <input className="border rounded-lg p-2 text-xs w-20 outline-none focus:border-blue-500 font-bold" type="time" value={editHora} onChange={e => setEditHora(e.target.value)} />
               <button onClick={saveInfo} className="bg-blue-600 text-white p-2 rounded-lg hover:bg-blue-700 shadow-md">
                 <CheckCircle size={14} />
+              </button>
+              <button onClick={() => setIsEditing(false)} className="bg-slate-100 text-slate-600 p-2 rounded-lg hover:bg-slate-200">
+                <X size={14} />
               </button>
             </div>
           ) : (

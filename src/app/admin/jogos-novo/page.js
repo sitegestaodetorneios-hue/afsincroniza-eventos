@@ -48,7 +48,6 @@ function gerarConfrontosBerger(times) {
 function gerarCruzamentoRotativo(grupoA, grupoB) {
   let A = [...grupoA]
   let B = [...grupoB]
-  // garante que A seja o maior (ou igual), pra pad B com null
   if (B.length > A.length) { const tmp = A; A = B; B = tmp }
   while (B.length < A.length) B.push(null)
 
@@ -95,6 +94,20 @@ export default function GestaoJogosModelo() {
 
   const [regras, setRegras] = useState(['PONTOS', 'VITORIAS', 'SALDO', 'GOLS_PRO', 'VERMELHOS', 'AMARELOS'])
 
+  // ✅ REGRAS FIFA DA ETAPA (EDITÁVEIS)
+  const [temposPartida, setTemposPartida] = useState(['1T', '2T'])
+  const [assinaturasRequired, setAssinaturasRequired] = useState({ ARBITRO: 2, MESARIO: 1 })
+  const [empateMataMata, setEmpateMataMata] = useState('PENALTIS') // PENALTIS | PRORROGACAO | REPLAY | NENHUM
+  const [empateGrupos, setEmpateGrupos] = useState('NORMAL')       // NORMAL | PENALTIS | NENHUM
+  const [prorroMinutos, setProrroMinutos] = useState(5)
+  const [prorroTempos, setProrroTempos] = useState(['PR1', 'PR2'])
+  const [cartoesRegra, setCartoesRegra] = useState({
+    dois_amarelos: { suspende_jogos: 1, zera_apos_cumprir: true },
+    vermelho_direto: { punicao: 'SUSPENDE', suspende_jogos: 1 }, // ou ELIMINA
+    acumulacao_amarelos: { ativo: false, limite: 3, suspende_jogos: 1 },
+    limpa_na_fase: false
+  })
+
   const [showModalTimes, setShowModalTimes] = useState(false)
   const [todosTimes, setTodosTimes] = useState([])
   const [selectedTeams, setSelectedTeams] = useState(new Set())
@@ -115,10 +128,12 @@ export default function GestaoJogosModelo() {
       carregarModelos()
       carregarTodosTimes()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed])
 
   useEffect(() => {
     if (etapaId) selecionarEtapa(etapaId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [etapaId])
 
   async function carregarEtapas() {
@@ -139,11 +154,44 @@ export default function GestaoJogosModelo() {
   async function selecionarEtapa(id) {
     if (!id) return
     setLoading(true)
-    setEtapaId(id)
+    setEtapaId(String(id))
     setJogos([])
     try {
       const { data: etapaData } = await supabase.from('etapas').select('regras').eq('id', Number(id)).single()
       if (etapaData?.regras?.criterios) setRegras(etapaData.regras.criterios)
+
+      // ✅ carregar config FIFA da etapa
+      const r = etapaData?.regras || {}
+
+      if (Array.isArray(r?.sumula?.tempos) && r.sumula.tempos.length) {
+        setTemposPartida(r.sumula.tempos)
+      } else {
+        setTemposPartida(['1T', '2T'])
+      }
+
+      if (r?.sumula?.assinaturas_required) {
+        setAssinaturasRequired({
+          ARBITRO: Number(r.sumula.assinaturas_required.ARBITRO ?? 2),
+          MESARIO: Number(r.sumula.assinaturas_required.MESARIO ?? 1)
+        })
+      } else {
+        setAssinaturasRequired({ ARBITRO: 2, MESARIO: 1 })
+      }
+
+      if (r?.empate?.mata_mata) setEmpateMataMata(String(r.empate.mata_mata))
+      if (r?.empate?.grupos) setEmpateGrupos(String(r.empate.grupos))
+
+      if (r?.empate?.prorrogacao?.minutos) setProrroMinutos(Number(r.empate.prorrogacao.minutos))
+      if (Array.isArray(r?.empate?.prorrogacao?.tempos) && r.empate.prorrogacao.tempos.length) {
+        setProrroTempos(r.empate.prorrogacao.tempos)
+      }
+
+      if (r?.cartoes) {
+        setCartoesRegra(prev => ({
+          ...prev,
+          ...r.cartoes
+        }))
+      }
 
       const { data: timesData } = await supabase
         .from('etapa_equipes')
@@ -151,14 +199,13 @@ export default function GestaoJogosModelo() {
         .eq('etapa_id', Number(id))
 
       const listaTimes = timesData?.map(t => {
-  const eq = t.equipes || {}
-  return {
-    ...eq,
-    grupo: t.grupo,
-    // normaliza igual você fez no sorteio
-    logo_url: eq.logo_url || eq.escudo_url || eq.escudo || eq.logo || null
-  }
-}) || []
+        const eq = t.equipes || {}
+        return {
+          ...eq,
+          grupo: t.grupo,
+          logo_url: eq.logo_url || eq.escudo_url || eq.escudo || eq.logo || null
+        }
+      }) || []
       setTimesDaEtapa(listaTimes)
 
       const mapaTimes = {}
@@ -204,7 +251,8 @@ export default function GestaoJogosModelo() {
     if (!etapaId) return
     setLoading(true)
     try {
-      await supabase.from('etapas').update({ regras: { criterios: regras } }).eq('id', Number(etapaId))
+      // mantém compatível: salva as regras completas
+      await salvarRegrasDaEtapa()
 
       const res = await fetch('/api/admin/etapas/avancar-fase', {
         method: 'POST',
@@ -214,8 +262,6 @@ export default function GestaoJogosModelo() {
 
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Erro na API')
-
-      console.log('🔍 DEBUG API:', data.debugMessage)
 
       let msg = `Cálculo Finalizado!\n\nJogos Atualizados: ${data.atualizados}`
       if (data.atualizados === 0) msg = data.debugMessage || (msg + `\n\nNenhum jogo novo preenchido.`)
@@ -229,8 +275,40 @@ export default function GestaoJogosModelo() {
     }
   }
 
+  async function salvarRegrasDaEtapa() {
+    if (!etapaId) return
+
+    const payloadRegras = {
+      criterios: regras,
+      sumula: {
+        tempos: temposPartida,
+        eventos: ['GOL', 'AMARELO', 'VERMELHO'],
+        assinaturas_required: {
+          ARBITRO: Number(assinaturasRequired.ARBITRO || 1),
+          MESARIO: Number(assinaturasRequired.MESARIO || 1)
+        }
+      },
+      cartoes: cartoesRegra,
+      empate: {
+        grupos: empateGrupos,
+        mata_mata: empateMataMata,
+        prorrogacao: {
+          tempos: prorroTempos,
+          minutos: Number(prorroMinutos || 5)
+        }
+      }
+    }
+
+    const { error } = await supabase
+      .from('etapas')
+      .update({ regras: payloadRegras })
+      .eq('id', Number(etapaId))
+
+    if (error) throw error
+  }
+
   // ======================================================
-  // ✅ GERAR TUDO (AGORA COM FOLGA QUANDO ÍMPAR)
+  // ✅ GERAR TUDO
   // ======================================================
   async function gerarTudo() {
     if (!etapaId || !modeloSelecionado || timesDaEtapa.length < 2) {
@@ -248,11 +326,10 @@ export default function GestaoJogosModelo() {
 
       await supabase.from('jogos').delete().eq('etapa_id', Number(etapaId))
 
-      await supabase.from('etapas').update({ regras: { criterios: regras } }).eq('id', Number(etapaId))
+      await salvarRegrasDaEtapa()
 
-      // embaralha só para distribuir grupos (se não for mata-mata puro)
       const timesEmbaralhados = [...timesDaEtapa].sort(() => Math.random() - 0.5)
-      const letras = ['A','B','C','D','E','F','G','H','I','J']
+      const letras = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']
 
       if (estiloGrupo !== 'MATA_MATA_PURO') {
         for (let i = 0; i < timesEmbaralhados.length; i++) {
@@ -265,7 +342,6 @@ export default function GestaoJogosModelo() {
         }
       }
 
-      // recarrega times com grupos atualizados (garante consistência)
       const { data: timesData } = await supabase
         .from('etapa_equipes')
         .select('*, equipes(*)')
@@ -282,7 +358,6 @@ export default function GestaoJogosModelo() {
 
       let insertsJogos = []
 
-      // 1) INTRA (por grupo) — berger já gera FOLGA quando ímpar
       if (estiloGrupo === 'INTRA_GRUPO' || estiloGrupo === 'TODOS_CONTRA_TODOS' || estiloGrupo === 'IDA_E_VOLTA') {
         const rodadasGlobais = {}
         let maxRodadas = 0
@@ -330,7 +405,6 @@ export default function GestaoJogosModelo() {
         }
 
         if (estiloGrupo === 'IDA_E_VOLTA') {
-          // ✅ não duplicar folga na volta
           const idaSemFolga = insertsJogos.filter(j => j.tipo_jogo !== 'FOLGA')
           const volta = idaSemFolga.map(j => ({
             ...j,
@@ -343,9 +417,7 @@ export default function GestaoJogosModelo() {
         }
       }
 
-      // 2) CRUZAMENTO (A x B) — AGORA COM FOLGA QUANDO DESBALANCEADO
       if (estiloGrupo === 'CRUZAMENTO') {
-        // Cruzamento em pares de grupos: A x B, C x D, ...
         for (let k = 0; k < qtdGrupos; k += 2) {
           const g1 = gruposObj[letras[k]] || []
           const g2 = gruposObj[letras[k + 1]] || []
@@ -383,7 +455,6 @@ export default function GestaoJogosModelo() {
         }
       }
 
-      // 3) MATA-MATA PURO — com FOLGA se ímpar (último avança “sem jogo”)
       if (estiloGrupo === 'MATA_MATA_PURO') {
         const todos = [...timesAtualizados]
         for (let i = 0; i < todos.length; i += 2) {
@@ -411,7 +482,6 @@ export default function GestaoJogosModelo() {
         }
       }
 
-      // 4) Mata-mata do modelo
       if (modelo && modelo.estrutura && estiloGrupo !== 'MATA_MATA_PURO') {
         const ultimaRodada = insertsJogos.length > 0 ? Math.max(...insertsJogos.map(j => j.rodada || 0)) : 0
         const insertsMataMata = modelo.estrutura.map((item, idx) => ({
@@ -450,7 +520,7 @@ export default function GestaoJogosModelo() {
       const payload = {
         etapa_id: Number(etapaId),
         tipo_jogo: 'ELIMINATORIA',
-        obs_publica: novoJogo.descricao.toUpperCase(),
+        obs_publica: String(novoJogo.descricao || '').toUpperCase(),
         equipe_a_id: novoJogo.equipe_a_id ? Number(novoJogo.equipe_a_id) : null,
         equipe_b_id: novoJogo.equipe_b_id ? Number(novoJogo.equipe_b_id) : null,
         rodada: novoJogo.rodada ? Number(novoJogo.rodada) : 99,
@@ -468,15 +538,24 @@ export default function GestaoJogosModelo() {
     }
   }
 
-  function irParaSorteioAoVivo() {
+  async function irParaSorteioAoVivo() {
     if (!etapaId || !modeloSelecionado) return alert('Selecione etapa e modelo.')
     const params = new URLSearchParams({
-      etapa_id: etapaId,
+      etapa_id: String(etapaId),
       qtd_grupos: String(qtdGrupos),
       modelo_id: String(modeloSelecionado),
-      estilo: estiloGrupo
+      estilo: String(estiloGrupo)
     })
-    router.push(`/admin/sorteio-novo?${params.toString()}`)
+
+    setLoading(true)
+    try {
+      await salvarRegrasDaEtapa()
+      router.push(`/admin/sorteio-novo?${params.toString()}`)
+    } catch (e) {
+      alert('Erro ao salvar regras da etapa: ' + (e.message || e))
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function confirmarImportacao() {
@@ -556,7 +635,6 @@ export default function GestaoJogosModelo() {
       }).eq('id', id)
     }
 
-    // ✅ permitir editar times em QUALQUER card (inclusive GRUPO e FOLGA)
     if (action === 'set_teams') {
       const a = d.equipe_a_id ? Number(d.equipe_a_id) : null
       const b = d.equipe_b_id ? Number(d.equipe_b_id) : null
@@ -610,9 +688,8 @@ export default function GestaoJogosModelo() {
                       sel ? s.delete(t.id) : s.add(t.id)
                       setSelectedTeams(s)
                     }}
-                    className={`p-3 rounded-xl border cursor-pointer flex justify-between items-center ${
-                      sel ? 'bg-blue-50 border-blue-500' : 'bg-slate-50 border-slate-100'
-                    }`}
+                    className={`p-3 rounded-xl border cursor-pointer flex justify-between items-center ${sel ? 'bg-blue-50 border-blue-500' : 'bg-slate-50 border-slate-100'
+                      }`}
                   >
                     <span className="font-bold text-xs">{t.nome_equipe}</span>
                     {sel && <CheckCircle size={16} className="text-blue-500" />}
@@ -631,26 +708,39 @@ export default function GestaoJogosModelo() {
       )}
 
       <div className="max-w-7xl mx-auto">
-        <div className="flex items-center gap-4 mb-8">
-          <Link href="/admin" className="bg-white p-3 rounded-full shadow hover:scale-105"><ArrowLeft /></Link>
-          <div>
-            <h1 className="text-2xl font-black uppercase text-slate-800 flex items-center gap-2">
-              <Trophy className="text-yellow-500 fill-yellow-500" /> Painel de Controle
-            </h1>
-            <p className="text-slate-500 text-xs font-bold">Gestão completa de campeonatos.</p>
-          </div>
-        </div>
+       <div className="flex items-center justify-between gap-4 mb-8">
+  <div className="flex items-center gap-4">
+    <Link href="/admin" className="bg-white p-3 rounded-full shadow hover:scale-105">
+      <ArrowLeft />
+    </Link>
+
+    <div>
+      <h1 className="text-2xl font-black uppercase text-slate-800 flex items-center gap-2">
+        <Trophy className="text-yellow-500 fill-yellow-500" /> Painel de Controle
+      </h1>
+      <p className="text-slate-500 text-xs font-bold">Gestão completa de campeonatos.</p>
+    </div>
+  </div>
+
+  {/* ✅ NOVO: link para cadastrar árbitros/mesários */}
+  <Link
+    href="/admin/staff"
+    className="bg-slate-900 text-white px-4 py-2 rounded-xl text-xs font-black uppercase hover:bg-black flex items-center gap-2 shadow-sm"
+    title="Cadastrar árbitros e mesários"
+  >
+    <Shield size={14} /> Cadastro de Árbitros
+  </Link>
+      </div>
 
         <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 mb-6 flex gap-2 overflow-x-auto">
           {etapas.map(e => (
             <button
               key={e.id}
               onClick={() => selecionarEtapa(e.id)}
-              className={`px-4 py-2 rounded-lg font-bold text-xs uppercase whitespace-nowrap border transition-all ${
-                etapaId === e.id
-                  ? 'bg-slate-900 text-white border-slate-900 shadow-lg'
-                  : 'bg-white border-slate-200 text-slate-400 hover:border-slate-400'
-              }`}
+              className={`px-4 py-2 rounded-lg font-bold text-xs uppercase whitespace-nowrap border transition-all ${String(etapaId) === String(e.id)
+                ? 'bg-slate-900 text-white border-slate-900 shadow-lg'
+                : 'bg-white border-slate-200 text-slate-400 hover:border-slate-400'
+                }`}
             >
               {e.titulo}
             </button>
@@ -692,7 +782,7 @@ export default function GestaoJogosModelo() {
                       value={qtdGrupos}
                       onChange={e => setQtdGrupos(Number(e.target.value))}
                     >
-                      {[1,2,3,4,5,6,8,10].map(n => <option key={n} value={n}>{n} Grupos</option>)}
+                      {[1, 2, 3, 4, 5, 6, 8, 10].map(n => <option key={n} value={n}>{n} Grupos</option>)}
                     </select>
                   </div>
 
@@ -749,6 +839,177 @@ export default function GestaoJogosModelo() {
                         </div>
                       ))}
                     </div>
+                  </div>
+
+                  {/* ✅ CONFIG FIFA DA ETAPA */}
+                  <div className="bg-slate-800 p-3 rounded-lg border border-slate-700">
+                    <p className="text-[9px] font-bold text-slate-400 uppercase mb-2 flex items-center gap-1">
+                      <Settings size={10} /> Config FIFA da Etapa
+                    </p>
+
+                    <div className="mb-3">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase">Tempos da Partida</label>
+                      <div className="flex gap-2 mt-1">
+                        <button
+                          type="button"
+                          onClick={() => setTemposPartida(['1T'])}
+                          className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase border ${temposPartida.length === 1
+                            ? 'bg-yellow-500 text-slate-900 border-yellow-500'
+                            : 'bg-slate-900 text-slate-300 border-slate-700'
+                            }`}
+                        >
+                          1 Tempo
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setTemposPartida(['1T', '2T'])}
+                          className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase border ${temposPartida.length === 2
+                            ? 'bg-yellow-500 text-slate-900 border-yellow-500'
+                            : 'bg-slate-900 text-slate-300 border-slate-700'
+                            }`}
+                        >
+                          2 Tempos
+                        </button>
+                      </div>
+                      <div className="mt-2 text-[10px] text-slate-400 font-bold">
+                        Atual: {temposPartida.join(' / ')}
+                      </div>
+                    </div>
+
+                    <div className="mb-3">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase">Empate no Mata-Mata</label>
+                      <select
+                        className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs font-bold text-white mt-1"
+                        value={empateMataMata}
+                        onChange={e => setEmpateMataMata(e.target.value)}
+                      >
+                        <option value="PENALTIS">Pênaltis</option>
+                        <option value="PRORROGACAO">Prorrogação + Pênaltis</option>
+                        <option value="REPLAY">Jogo de Volta / Replay</option>
+                        <option value="NENHUM">Sem Desempate (manual)</option>
+                      </select>
+
+                      {empateMataMata === 'PRORROGACAO' && (
+                        <div className="mt-2 grid grid-cols-2 gap-2">
+                          <input
+                            type="number"
+                            className="bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs font-bold text-white"
+                            value={prorroMinutos}
+                            onChange={e => setProrroMinutos(Number(e.target.value))}
+                            placeholder="Min por tempo"
+                          />
+                          <div className="text-[10px] text-slate-400 font-bold flex items-center">
+                            PR: {prorroTempos.join(' / ')}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="mb-2">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase">Regras de Cartões (Etapa)</label>
+
+                      <div className="bg-slate-900 border border-slate-700 rounded-lg p-2 mt-1 space-y-2">
+                        <div className="flex justify-between items-center">
+                          <span className="text-[10px] font-bold text-slate-300">2 Amarelos → Suspende</span>
+                          <input
+                            type="number"
+                            className="w-16 bg-black border border-slate-700 rounded p-1 text-xs font-black text-white text-center"
+                            value={cartoesRegra.dois_amarelos.suspende_jogos}
+                            onChange={e => setCartoesRegra(prev => ({
+                              ...prev,
+                              dois_amarelos: { ...prev.dois_amarelos, suspende_jogos: Number(e.target.value) }
+                            }))}
+                          />
+                        </div>
+
+                        <div className="flex justify-between items-center">
+                          <span className="text-[10px] font-bold text-slate-300">Vermelho Direto</span>
+                          <select
+                            className="bg-black border border-slate-700 rounded p-1 text-xs font-black text-white"
+                            value={cartoesRegra.vermelho_direto.punicao}
+                            onChange={e => setCartoesRegra(prev => ({
+                              ...prev,
+                              vermelho_direto: { ...prev.vermelho_direto, punicao: e.target.value }
+                            }))}
+                          >
+                            <option value="SUSPENDE">Suspende</option>
+                            <option value="ELIMINA">Elimina da etapa</option>
+                          </select>
+                        </div>
+
+                        {cartoesRegra.vermelho_direto.punicao === 'SUSPENDE' && (
+                          <div className="flex justify-between items-center">
+                            <span className="text-[10px] font-bold text-slate-300">Suspende (jogos)</span>
+                            <input
+                              type="number"
+                              className="w-16 bg-black border border-slate-700 rounded p-1 text-xs font-black text-white text-center"
+                              value={cartoesRegra.vermelho_direto.suspende_jogos}
+                              onChange={e => setCartoesRegra(prev => ({
+                                ...prev,
+                                vermelho_direto: { ...prev.vermelho_direto, suspende_jogos: Number(e.target.value) }
+                              }))}
+                            />
+                          </div>
+                        )}
+
+                        <div className="flex justify-between items-center">
+                          <span className="text-[10px] font-bold text-slate-300">Limpa cartões na fase?</span>
+                          <button
+                            type="button"
+                            onClick={() => setCartoesRegra(prev => ({ ...prev, limpa_na_fase: !prev.limpa_na_fase }))}
+                            className={`px-3 py-1 rounded text-[10px] font-black uppercase ${cartoesRegra.limpa_na_fase
+                              ? 'bg-yellow-500 text-slate-900'
+                              : 'bg-slate-800 text-slate-300 border border-slate-700'
+                              }`}
+                          >
+                            {cartoesRegra.limpa_na_fase ? 'SIM' : 'NÃO'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-3">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase">Assinaturas na Súmula</label>
+                      <div className="grid grid-cols-2 gap-2 mt-1">
+                        <div className="bg-slate-900 border border-slate-700 rounded-lg p-2">
+                          <div className="text-[10px] font-black text-slate-300">Árbitros</div>
+                          <input
+                            type="number"
+                            className="w-full bg-black border border-slate-700 rounded p-2 text-xs font-black text-white text-center mt-1"
+                            value={assinaturasRequired.ARBITRO}
+                            onChange={e => setAssinaturasRequired(prev => ({ ...prev, ARBITRO: Number(e.target.value) }))}
+                          />
+                        </div>
+                        <div className="bg-slate-900 border border-slate-700 rounded-lg p-2">
+                          <div className="text-[10px] font-black text-slate-300">Mesários</div>
+                          <input
+                            type="number"
+                            className="w-full bg-black border border-slate-700 rounded p-2 text-xs font-black text-white text-center mt-1"
+                            value={assinaturasRequired.MESARIO}
+                            onChange={e => setAssinaturasRequired(prev => ({ ...prev, MESARIO: Number(e.target.value) }))}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={loading}
+                      onClick={async () => {
+                        try {
+                          setLoading(true)
+                          await salvarRegrasDaEtapa()
+                          alert('✅ Regras FIFA salvas na etapa.')
+                        } catch (e) {
+                          alert('Erro ao salvar regras: ' + (e.message || e))
+                        } finally {
+                          setLoading(false)
+                        }
+                      }}
+                      className="w-full mt-3 bg-slate-700 hover:bg-slate-600 text-white py-2 rounded-xl text-[10px] font-black uppercase"
+                    >
+                      Salvar Regras da Etapa
+                    </button>
                   </div>
 
                   <button
@@ -877,7 +1138,14 @@ export default function GestaoJogosModelo() {
               ) : (
                 <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
                   {jogos.map(j => (
-                    <GameCard key={j.id} jogo={j} onUpdate={atualizarJogo} pin={pin} allTeams={timesDaEtapa} />
+                    <GameCard
+                      key={j.id}
+                      jogo={j}
+                      onUpdate={atualizarJogo}
+                      pin={pin}
+                      allTeams={timesDaEtapa}
+                      stageCfg={{ tempos: temposPartida }}
+                   />
                   ))}
                 </div>
               )}
@@ -889,20 +1157,26 @@ export default function GestaoJogosModelo() {
   )
 }
 
-// ======================================================
-// ✅ GameCard — agora:
-// - Detecta FOLGA (tipo_jogo === 'FOLGA' ou equipe_b_id null)
-// - Desliga placar/súmula/pênaltis em FOLGA
-// - Permite editar times em QUALQUER jogo (grupo/copa/folga)
-// ======================================================
-function GameCard({ jogo, onUpdate, pin, allTeams }) {
-  const isFolga = String(jogo.tipo_jogo || '').toUpperCase() === 'FOLGA' || (jogo.equipe_a_id && !jogo.equipe_b_id)
+// ✅ COLE ESTE BLOCO NO LUGAR DO SEU GameCard (substitui o placeholder)
+// - Compatível com seu atualizarJogo({action: ...})
+// - Súmula com 1T/2T (ou tempos configurados) + camisa auto-preenche atleta
+// - Suporta FOLGA (desliga placar/súmula/pênaltis)
+// - Inclui impressão simples da súmula (print do navegador)
+
+function GameCard({ jogo, onUpdate, pin, allTeams, stageCfg }) {
+  const temposCfg =
+    Array.isArray(stageCfg?.tempos) && stageCfg.tempos.length ? stageCfg.tempos : ['1T', '2T']
+
+  const isFolga =
+    String(jogo.tipo_jogo || '').toUpperCase() === 'FOLGA' || (jogo.equipe_a_id && !jogo.equipe_b_id)
 
   const [ga, setGa] = useState(jogo.gols_a ?? '')
   const [gb, setGb] = useState(jogo.gols_b ?? '')
   const [pa, setPa] = useState(jogo.penaltis_a ?? '')
   const [pb, setPb] = useState(jogo.penaltis_b ?? '')
-  const [showPenalties, setShowPenalties] = useState(jogo.penaltis_a !== null || jogo.penaltis_b !== null)
+  const [showPenalties, setShowPenalties] = useState(
+    jogo.penaltis_a !== null || jogo.penaltis_b !== null
+  )
 
   const [isSettingTeams, setIsSettingTeams] = useState(false)
   const [manualA, setManualA] = useState(jogo.equipe_a_id || '')
@@ -914,10 +1188,20 @@ function GameCard({ jogo, onUpdate, pin, allTeams }) {
   const [editJuiz, setEditJuiz] = useState(jogo.arbitro ?? '')
 
   const [openSumula, setOpenSumula] = useState(false)
+  const [sumulaLoading, setSumulaLoading] = useState(false)
   const [eventos, setEventos] = useState([])
   const [atletasA, setAtletasA] = useState([])
   const [atletasB, setAtletasB] = useState([])
-  const [novoEvento, setNovoEvento] = useState({ tipo: 'GOL', equipe: 'A', atleta_id: '', minuto: '', camisa_no_jogo: '', observacao: '' })
+
+  const [novoEvento, setNovoEvento] = useState({
+    tipo: 'GOL',
+    tempo: temposCfg?.[0] || '1T',
+    equipe: 'A',
+    atleta_id: '',
+    minuto: '',
+    camisa_no_jogo: '',
+    observacao: ''
+  })
 
   const nomeA = jogo.equipeA?.nome_equipe || (jogo.origem_a ? `( ${jogo.origem_a} )` : 'Aguardando...')
   const nomeB = isFolga
@@ -944,7 +1228,6 @@ function GameCard({ jogo, onUpdate, pin, allTeams }) {
   }
 
   const saveTeams = () => {
-    // aceita B vazio => vira FOLGA
     if (manualA && manualB && String(manualA) === String(manualB)) {
       alert('Time A e Time B não podem ser o mesmo.')
       return
@@ -953,52 +1236,110 @@ function GameCard({ jogo, onUpdate, pin, allTeams }) {
     setIsSettingTeams(false)
   }
 
-  async function loadSumula() {
-    if (!pin) return
-    // Súmula não faz sentido em FOLGA ou sem times definidos
-    if (isFolga) return
-    if (!jogo.equipe_a_id || !jogo.equipe_b_id) return
-
-    try {
-      const [ev, ra, rb] = await Promise.all([
-        fetch(`/api/admin/jogos/eventos?jogo_id=${jogo.id}`, { headers: { 'x-admin-pin': pin } }).then(r => r.json()),
-        fetch(`/api/admin/atletas?equipe_id=${jogo.equipe_a_id}`, { headers: { 'x-admin-pin': pin } }).then(r => r.json()),
-        fetch(`/api/admin/atletas?equipe_id=${jogo.equipe_b_id}`, { headers: { 'x-admin-pin': pin } }).then(r => r.json())
-      ])
-      setEventos(Array.isArray(ev) ? ev : [])
-      setAtletasA(Array.isArray(ra) ? ra : [])
-      setAtletasB(Array.isArray(rb) ? rb : [])
-    } catch (e) {
-      console.error(e)
-    }
+  function atletaLabelById(atleta_id, camisa_no_jogo) {
+    if (!atleta_id) return camisa_no_jogo ? `#${camisa_no_jogo} Jogador` : 'Jogador'
+    const a = [...(atletasA || []), ...(atletasB || [])].find(x => String(x.id) === String(atleta_id))
+    const camisa = camisa_no_jogo ?? a?.numero_camisa ?? a?.numero ?? ''
+    return `${camisa ? `#${camisa} ` : ''}${a?.nome || 'Jogador'}`
   }
 
-  async function toggleSumula() {
-    if (isFolga) return
-    if (!openSumula) await loadSumula()
-    setOpenSumula(!openSumula)
+  function autoAtletaPorCamisa(camisa, lista) {
+    const c = String(camisa || '').trim()
+    if (!c) return ''
+    const a = (lista || []).find(x => String(x.numero_camisa ?? x.numero ?? '').trim() === c)
+    return a ? String(a.id) : ''
   }
 
   const handleSelectAtleta = (e, listaAtletas) => {
     const selectedId = e.target.value
     const atleta = listaAtletas.find(a => String(a.id) === String(selectedId))
-    const camisaAuto = atleta?.numero ? String(atleta.numero) : ''
-    setNovoEvento({ ...novoEvento, atleta_id: selectedId, camisa_no_jogo: camisaAuto })
+    const camisaAuto = atleta?.numero_camisa ?? atleta?.numero
+    setNovoEvento(prev => ({
+      ...prev,
+      atleta_id: selectedId,
+      camisa_no_jogo: camisaAuto ? String(camisaAuto) : prev.camisa_no_jogo
+    }))
+  }
+
+  const handleCamisaChange = (val) => {
+    const camisa = String(val || '').trim()
+    const lista = novoEvento.equipe === 'A' ? atletasA : atletasB
+    const idAuto = autoAtletaPorCamisa(camisa, lista)
+    setNovoEvento(prev => ({
+      ...prev,
+      camisa_no_jogo: camisa,
+      atleta_id: idAuto || prev.atleta_id
+    }))
+  }
+
+  async function loadSumula() {
+    if (!pin) return
+    if (isFolga) return
+    if (!jogo.equipe_a_id || !jogo.equipe_b_id) return
+
+    setSumulaLoading(true)
+    try {
+      const headers = { 'x-admin-pin': pin }
+
+      const [evRes, aRes, bRes] = await Promise.all([
+        fetch(`/api/admin/jogos/eventos?jogo_id=${jogo.id}`, { headers }),
+        fetch(`/api/admin/atletas?equipe_id=${jogo.equipe_a_id}`, { headers }),
+        fetch(`/api/admin/atletas?equipe_id=${jogo.equipe_b_id}`, { headers })
+      ])
+
+      const evJson = await safeJson(evRes)
+      const aJson = await safeJson(aRes)
+      const bJson = await safeJson(bRes)
+
+      if (!evRes.ok) throw new Error(evJson?.error || 'Erro ao carregar eventos')
+      if (!aRes.ok) throw new Error(aJson?.error || 'Erro ao carregar atletas A')
+      if (!bRes.ok) throw new Error(bJson?.error || 'Erro ao carregar atletas B')
+
+      setEventos(Array.isArray(evJson) ? evJson : [])
+      setAtletasA(Array.isArray(aJson) ? aJson : [])
+      setAtletasB(Array.isArray(bJson) ? bJson : [])
+    } finally {
+      setSumulaLoading(false)
+    }
+  }
+
+  async function toggleSumula() {
+    if (isFolga) return
+    try {
+      if (!openSumula) await loadSumula()
+      setOpenSumula(!openSumula)
+    } catch (e) {
+      alert(e.message || 'Erro ao abrir súmula')
+    }
   }
 
   async function addEvento() {
     if (isFolga) return
     if (!novoEvento.equipe) return
+
     const equipe_id = novoEvento.equipe === 'A' ? jogo.equipe_a_id : jogo.equipe_b_id
     const atleta_id = novoEvento.atleta_id ? Number(novoEvento.atleta_id) : null
 
-    await fetch('/api/admin/jogos/eventos', {
+    const res = await fetch('/api/admin/jogos/eventos', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-admin-pin': pin },
-      body: JSON.stringify({ jogo_id: jogo.id, equipe_id, atleta_id, ...novoEvento })
+      body: JSON.stringify({
+        jogo_id: jogo.id,
+        equipe_id,
+        atleta_id,
+        tipo: novoEvento.tipo,
+        tempo: novoEvento.tempo, // ✅ 1T/2T/PR...
+        minuto: novoEvento.minuto,
+        camisa_no_jogo: novoEvento.camisa_no_jogo,
+        observacao: novoEvento.observacao
+      })
     })
 
-    if (novoEvento.tipo === 'GOL') {
+    const j = await safeJson(res)
+    if (!res.ok) return alert(j?.error || 'Erro ao salvar evento')
+
+    // auto placar por gol
+    if (String(novoEvento.tipo).toUpperCase() === 'GOL') {
       if (novoEvento.equipe === 'A') {
         const novoGa = Number(ga || 0) + 1
         setGa(novoGa)
@@ -1011,16 +1352,23 @@ function GameCard({ jogo, onUpdate, pin, allTeams }) {
     }
 
     await loadSumula()
-    setNovoEvento({ ...novoEvento, observacao: '', minuto: '', camisa_no_jogo: '', atleta_id: '' })
+    setNovoEvento(prev => ({ ...prev, atleta_id: '', minuto: '', camisa_no_jogo: '', observacao: '' }))
   }
 
   async function delEvento(id, tipo, equipe_id) {
     if (isFolga) return
     if (!confirm('Excluir evento?')) return
-    await fetch(`/api/admin/jogos/eventos?id=${id}`, { method: 'DELETE', headers: { 'x-admin-pin': pin } })
 
-    if (tipo === 'GOL') {
-      if (equipe_id === jogo.equipe_a_id) {
+    const res = await fetch(`/api/admin/jogos/eventos?id=${id}`, {
+      method: 'DELETE',
+      headers: { 'x-admin-pin': pin }
+    })
+
+    const j = await safeJson(res)
+    if (!res.ok) return alert(j?.error || 'Erro ao excluir')
+
+    if (String(tipo).toUpperCase() === 'GOL') {
+      if (Number(equipe_id) === Number(jogo.equipe_a_id)) {
         const novoGa = Math.max(0, Number(ga || 0) - 1)
         setGa(novoGa)
         save(novoGa, gb)
@@ -1034,9 +1382,80 @@ function GameCard({ jogo, onUpdate, pin, allTeams }) {
     await loadSumula()
   }
 
+  function imprimirSumula() {
+    const win = window.open('', '_blank')
+    if (!win) return alert('Bloqueado pelo navegador. Permita popups para imprimir.')
+
+    const evs = (eventos || []).map(ev => {
+      const team = Number(ev.equipe_id) === Number(jogo.equipe_a_id) ? nomeA : nomeB
+      const t = ev.tempo ? String(ev.tempo) : ''
+      const m = ev.minuto ? `${ev.minuto}'` : ''
+      const camisa = ev.camisa_no_jogo || ''
+      const atleta = atletaLabelById(ev.atleta_id, ev.camisa_no_jogo)
+      const obs = ev.observacao ? String(ev.observacao) : ''
+      return `<tr>
+        <td>${t}</td>
+        <td>${m}</td>
+        <td>${team}</td>
+        <td>${ev.tipo}</td>
+        <td>${camisa ? `#${camisa}` : ''}</td>
+        <td>${atleta}</td>
+        <td>${obs}</td>
+      </tr>`
+    }).join('')
+
+    win.document.write(`
+      <html>
+      <head>
+        <title>Súmula - Jogo ${jogo.id}</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 20px; }
+          h1,h2 { margin: 0 0 8px 0; }
+          .meta { margin: 6px 0 14px 0; color: #444; font-size: 12px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+          th, td { border: 1px solid #ddd; padding: 8px; font-size: 12px; }
+          th { background: #f5f5f5; text-align: left; }
+          .placar { font-size: 18px; font-weight: bold; margin-top: 6px; }
+        </style>
+      </head>
+      <body>
+        <h1>SÚMULA</h1>
+        <div class="meta">Jogo ID: ${jogo.id} • Etapa: ${jogo.etapa_id} • ${jogo.data_jogo || ''} ${jogo.horario || ''}</div>
+        <h2>${nomeA} x ${nomeB}</h2>
+        <div class="placar">${ga || 0} - ${gb || 0}</div>
+        <div class="meta">Árbitro: ${jogo.arbitro || ''}</div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Tempo</th>
+              <th>Min</th>
+              <th>Equipe</th>
+              <th>Tipo</th>
+              <th>Camisa</th>
+              <th>Atleta</th>
+              <th>Obs</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${evs || '<tr><td colspan="7">Sem eventos</td></tr>'}
+          </tbody>
+        </table>
+
+        <script>
+          window.onload = function() { window.print(); }
+        </script>
+      </body>
+      </html>
+    `)
+    win.document.close()
+  }
+
   return (
     <div className={`bg-white border rounded-2xl p-4 shadow-sm relative transition-all ${
-      isFolga ? 'border-amber-300 ring-1 ring-amber-100' : (jogo.status === 'EM_ANDAMENTO' ? 'border-green-400 ring-1 ring-green-100' : 'border-slate-200')
+      isFolga
+        ? 'border-amber-300 ring-1 ring-amber-100'
+        : (jogo.status === 'EM_ANDAMENTO' ? 'border-green-400 ring-1 ring-green-100' : 'border-slate-200')
     }`}>
       <div className="flex justify-between items-center mb-3">
         <div className="flex gap-2 items-center">
@@ -1046,13 +1465,15 @@ function GameCard({ jogo, onUpdate, pin, allTeams }) {
             {isFolga ? (jogo.obs_publica || 'FOLGA') : (jogo.obs_publica || jogo.tipo_jogo)}
           </span>
 
-          <span className={jogo.status === 'EM_ANDAMENTO' ? 'text-green-600 animate-pulse text-[10px] font-bold' : 'text-slate-400 text-[10px] font-bold'}>
-            {String(jogo.status || '').replace('_', ' ')}
+          <span className={jogo.status === 'EM_ANDAMENTO'
+            ? 'text-green-600 animate-pulse text-[10px] font-bold'
+            : 'text-slate-400 text-[10px] font-bold'
+          }>
+            {String(jogo.status || '').replaceAll('_', ' ')}
           </span>
         </div>
 
         <div className="flex gap-1">
-          {/* ✅ AGORA: editar times em qualquer jogo (inclusive GRUPO/FOLGA) */}
           <button
             onClick={() => setIsSettingTeams(!isSettingTeams)}
             className={`${isSettingTeams ? 'text-blue-600' : 'text-slate-300'} hover:text-blue-500`}
@@ -1063,13 +1484,35 @@ function GameCard({ jogo, onUpdate, pin, allTeams }) {
 
           {isEditing ? (
             <div className="flex items-center gap-1 bg-white p-1 rounded-lg border border-blue-200 shadow-lg absolute right-2 top-2 z-20">
-              <input className="border rounded p-1 text-[10px] w-16" type="text" placeholder="Juiz" value={editJuiz} onChange={e => setEditJuiz(e.target.value)} />
-              <input className="border rounded p-1 text-[10px] w-20" type="date" value={editData} onChange={e => setEditData(e.target.value)} />
-              <input className="border rounded p-1 text-[10px] w-14" type="time" value={editHora} onChange={e => setEditHora(e.target.value)} />
-              <button onClick={saveInfo} className="bg-blue-600 text-white p-1 rounded hover:bg-blue-700"><CheckCircle size={12} /></button>
+              <input
+                className="border rounded p-1 text-[10px] w-16"
+                type="text"
+                placeholder="Juiz"
+                value={editJuiz}
+                onChange={e => setEditJuiz(e.target.value)}
+              />
+              <input
+                className="border rounded p-1 text-[10px] w-20"
+                type="date"
+                value={editData}
+                onChange={e => setEditData(e.target.value)}
+              />
+              <input
+                className="border rounded p-1 text-[10px] w-14"
+                type="time"
+                value={editHora}
+                onChange={e => setEditHora(e.target.value)}
+              />
+              <button onClick={saveInfo} className="bg-blue-600 text-white p-1 rounded hover:bg-blue-700">
+                <CheckCircle size={12} />
+              </button>
             </div>
           ) : (
-            <button onClick={() => setIsEditing(true)} className="text-slate-300 hover:text-blue-500 transition-colors" title="Editar data/hora/juiz">
+            <button
+              onClick={() => setIsEditing(true)}
+              className="text-slate-300 hover:text-blue-500 transition-colors"
+              title="Editar data/hora/juiz"
+            >
               <Edit3 size={12} />
             </button>
           )}
@@ -1097,15 +1540,29 @@ function GameCard({ jogo, onUpdate, pin, allTeams }) {
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-2 truncate">
                 <div className="w-5 h-5 flex items-center justify-center bg-slate-50 rounded-full border border-slate-100 overflow-hidden">
-                  {jogo.equipeA?.escudo_url ? <img src={jogo.equipeA.escudo_url} className="w-full h-full object-contain" /> : <Shield size={10} className="text-slate-300" />}
+                  {jogo.equipeA?.escudo_url
+                    ? <img src={jogo.equipeA.escudo_url} className="w-full h-full object-contain" />
+                    : <Shield size={10} className="text-slate-300" />
+                  }
                 </div>
                 <span className="font-bold text-sm text-slate-800 truncate">{nomeA}</span>
               </div>
 
               {!isFolga && (
                 <div className="flex gap-1">
-                  <input className="w-10 p-1 text-center bg-slate-50 rounded border font-bold" value={ga} onChange={e => setGa(e.target.value)} />
-                  {showPenalties && <input className="w-8 p-1 text-center bg-yellow-50 rounded border border-yellow-300 font-bold text-xs" placeholder="PK" value={pa} onChange={e => setPa(e.target.value)} />}
+                  <input
+                    className="w-10 p-1 text-center bg-slate-50 rounded border font-bold"
+                    value={ga}
+                    onChange={e => setGa(e.target.value)}
+                  />
+                  {showPenalties && (
+                    <input
+                      className="w-8 p-1 text-center bg-yellow-50 rounded border border-yellow-300 font-bold text-xs"
+                      placeholder="PK"
+                      value={pa}
+                      onChange={e => setPa(e.target.value)}
+                    />
+                  )}
                 </div>
               )}
             </div>
@@ -1114,7 +1571,10 @@ function GameCard({ jogo, onUpdate, pin, allTeams }) {
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-2 truncate">
                 <div className="w-5 h-5 flex items-center justify-center bg-slate-50 rounded-full border border-slate-100 overflow-hidden">
-                  {!isFolga && jogo.equipeB?.escudo_url ? <img src={jogo.equipeB.escudo_url} className="w-full h-full object-contain" /> : <Shield size={10} className="text-slate-300" />}
+                  {!isFolga && jogo.equipeB?.escudo_url
+                    ? <img src={jogo.equipeB.escudo_url} className="w-full h-full object-contain" />
+                    : <Shield size={10} className="text-slate-300" />
+                  }
                 </div>
                 <span className={`font-bold text-sm truncate ${isFolga ? 'text-amber-700' : 'text-slate-800'}`}>
                   {nomeB}
@@ -1123,8 +1583,19 @@ function GameCard({ jogo, onUpdate, pin, allTeams }) {
 
               {!isFolga && (
                 <div className="flex gap-1">
-                  <input className="w-10 p-1 text-center bg-slate-50 rounded border font-bold" value={gb} onChange={e => setGb(e.target.value)} />
-                  {showPenalties && <input className="w-8 p-1 text-center bg-yellow-50 rounded border border-yellow-300 font-bold text-xs" placeholder="PK" value={pb} onChange={e => setPb(e.target.value)} />}
+                  <input
+                    className="w-10 p-1 text-center bg-slate-50 rounded border font-bold"
+                    value={gb}
+                    onChange={e => setGb(e.target.value)}
+                  />
+                  {showPenalties && (
+                    <input
+                      className="w-8 p-1 text-center bg-yellow-50 rounded border border-yellow-300 font-bold text-xs"
+                      placeholder="PK"
+                      value={pb}
+                      onChange={e => setPb(e.target.value)}
+                    />
+                  )}
                 </div>
               )}
             </div>
@@ -1154,7 +1625,9 @@ function GameCard({ jogo, onUpdate, pin, allTeams }) {
           {!isFolga && (
             <button
               onClick={() => setShowPenalties(!showPenalties)}
-              className={`p-1.5 rounded transition-colors ${showPenalties ? 'bg-yellow-100 text-yellow-700' : 'bg-slate-100 text-slate-600 hover:text-yellow-600'}`}
+              className={`p-1.5 rounded transition-colors ${
+                showPenalties ? 'bg-yellow-100 text-yellow-700' : 'bg-slate-100 text-slate-600 hover:text-yellow-600'
+              }`}
               title="Pênaltis"
             >
               <Target size={14} />
@@ -1164,27 +1637,44 @@ function GameCard({ jogo, onUpdate, pin, allTeams }) {
           {!isFolga && (
             <button
               onClick={toggleSumula}
-              className={`p-1.5 rounded transition-colors ${openSumula ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-600 hover:text-blue-600'}`}
+              className={`p-1.5 rounded transition-colors ${
+                openSumula ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-600 hover:text-blue-600'
+              }`}
               title="Súmula"
             >
               <ClipboardList size={14} />
             </button>
           )}
+        </div>
+      </div>
 
-          {/* ✅ Botões de status: desliga fluxo de placar pra FOLGA (opcional, mas mais seguro) */}
-          {!isFolga && jogo.status === 'EM_BREVE' && (
+      {/* ✅ CONTROLES DO JOGO */}
+      {!isFolga && (
+        <div className="mt-3 flex gap-2">
+          {jogo.status === 'EM_BREVE' && (
             <button
               onClick={() => onUpdate({ action: 'set_status', id: jogo.id, status: 'EM_ANDAMENTO' })}
-              className="bg-green-600 text-white px-3 py-1.5 rounded font-black text-[10px] uppercase hover:bg-green-500 shadow-md"
+              className="flex-1 bg-green-600 text-white py-2 rounded-xl text-[10px] font-black uppercase hover:bg-green-500"
             >
               INICIAR
             </button>
           )}
 
-          {!isFolga && jogo.status === 'EM_ANDAMENTO' && (
+          {jogo.status === 'EM_ANDAMENTO' && (
             <>
-              <button onClick={() => save()} className="bg-slate-100 p-1.5 rounded text-slate-600 hover:text-blue-600" title="Salvar Placar">
-                <Save size={14} />
+              <button
+                onClick={() => onUpdate({
+                  action: 'set_score',
+                  id: jogo.id,
+                  gols_a: ga,
+                  gols_b: gb,
+                  penaltis_a: showPenalties ? (pa === '' ? null : pa) : null,
+                  penaltis_b: showPenalties ? (pb === '' ? null : pb) : null
+                })}
+                className="flex-1 bg-slate-100 text-slate-700 py-2 rounded-xl text-[10px] font-black uppercase hover:bg-slate-200 flex items-center justify-center gap-2"
+                title="Salvar"
+              >
+                <Save size={14} /> SALVAR
               </button>
 
               <button
@@ -1194,100 +1684,209 @@ function GameCard({ jogo, onUpdate, pin, allTeams }) {
                   status: 'FINALIZADO',
                   gols_a: ga,
                   gols_b: gb,
-                  penaltis_a: showPenalties && pa !== '' ? pa : null,
-                  penaltis_b: showPenalties && pb !== '' ? pb : null
+                  penaltis_a: showPenalties ? (pa === '' ? null : pa) : null,
+                  penaltis_b: showPenalties ? (pb === '' ? null : pb) : null
                 })}
-                className="bg-slate-900 text-white px-3 py-1.5 rounded font-black text-[10px] uppercase hover:bg-black shadow-md"
+                className="flex-1 bg-slate-900 text-white py-2 rounded-xl text-[10px] font-black uppercase hover:bg-black"
               >
                 ENCERRAR
               </button>
             </>
           )}
 
-          {!isFolga && jogo.status === 'FINALIZADO' && (
+          {jogo.status === 'FINALIZADO' && (
             <button
               onClick={() => onUpdate({ action: 'set_status', id: jogo.id, status: 'EM_ANDAMENTO' })}
-              className="bg-blue-50 text-blue-600 px-3 py-1.5 rounded font-bold text-[10px] uppercase hover:bg-blue-100 border border-blue-100"
-            >
-              REABRIR
-            </button>
-          )}
-
-          {/* ✅ Para FOLGA: só permitir “finalizar” (opcional), ou deixar quieto */}
-          {isFolga && jogo.status !== 'FINALIZADO' && (
-            <button
-              onClick={() => onUpdate({ action: 'set_status', id: jogo.id, status: 'FINALIZADO' })}
-              className="bg-amber-600 text-white px-3 py-1.5 rounded font-black text-[10px] uppercase hover:bg-amber-500 shadow-md"
-              title="Marcar folga como concluída"
-            >
-              CONFIRMAR
-            </button>
-          )}
-
-          {isFolga && jogo.status === 'FINALIZADO' && (
-            <button
-              onClick={() => onUpdate({ action: 'set_status', id: jogo.id, status: 'EM_BREVE' })}
-              className="bg-amber-50 text-amber-700 px-3 py-1.5 rounded font-bold text-[10px] uppercase hover:bg-amber-100 border border-amber-100"
+              className="flex-1 bg-blue-50 border border-blue-100 text-blue-700 py-2 rounded-xl text-[10px] font-black uppercase hover:bg-blue-100"
             >
               REABRIR
             </button>
           )}
         </div>
-      </div>
+      )}
 
+      {/* ✅ SÚMULA */}
       {!isFolga && openSumula && (
         <div className="mt-4 pt-4 border-t border-dashed border-slate-200 animate-in fade-in slide-in-from-top-2">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-[10px] font-black uppercase text-slate-400">
+              Súmula • Tempos: {temposCfg.join(' / ')}
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={imprimirSumula}
+                className="px-3 py-1 rounded-lg text-[10px] font-black uppercase bg-white border border-slate-200 hover:border-slate-400"
+                title="Imprimir Súmula"
+              >
+                IMPRIMIR
+              </button>
+            </div>
+          </div>
+
+          {sumulaLoading && (
+            <div className="mb-3 text-slate-500 text-xs font-bold flex items-center gap-2">
+              <Loader2 className="animate-spin" size={14} /> Carregando súmula...
+            </div>
+          )}
+
           <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 mb-3">
             <div className="grid grid-cols-2 gap-2 mb-2">
-              <select className="p-1.5 rounded border text-[10px] font-bold" value={novoEvento.tipo} onChange={e => setNovoEvento({ ...novoEvento, tipo: e.target.value })}>
+              <select
+                className="p-1.5 rounded border text-[10px] font-bold"
+                value={novoEvento.tipo}
+                onChange={e => setNovoEvento(prev => ({ ...prev, tipo: e.target.value }))}
+              >
                 <option value="GOL">⚽ GOL</option>
                 <option value="AMARELO">🟨 AMARELO</option>
                 <option value="VERMELHO">🟥 VERMELHO</option>
               </select>
 
-              <select className="p-1.5 rounded border text-[10px] font-bold" value={novoEvento.equipe} onChange={e => setNovoEvento({ ...novoEvento, equipe: e.target.value, atleta_id: '' })}>
-                <option value="A">{nomeA.substring(0, 10)}</option>
-                <option value="B">{nomeB.substring(0, 10)}</option>
+              <select
+                className="p-1.5 rounded border text-[10px] font-bold"
+                value={novoEvento.equipe}
+                onChange={e => {
+                  const equipe = e.target.value
+                  setNovoEvento(prev => ({
+                    ...prev,
+                    equipe,
+                    atleta_id: '',
+                    camisa_no_jogo: ''
+                  }))
+                }}
+              >
+                <option value="A">{nomeA.substring(0, 16)}</option>
+                <option value="B">{nomeB.substring(0, 16)}</option>
               </select>
             </div>
 
-            <select className="w-full p-1.5 rounded border text-[10px] font-bold mb-2" value={novoEvento.atleta_id} onChange={(e) => handleSelectAtleta(e, novoEvento.equipe === 'A' ? atletasA : atletasB)}>
-              <option value="">Selecione Atleta...</option>
-              {(novoEvento.equipe === 'A' ? atletasA : atletasB).map(a => (
-                <option key={a.id} value={a.id}>{a.numero ? `#${a.numero} - ` : ''}{a.nome}</option>
-              ))}
-            </select>
+            {/* ✅ 1T / 2T / PR */}
+            <div className="grid grid-cols-2 gap-2 mb-2">
+              <select
+                className="p-1.5 rounded border text-[10px] font-bold"
+                value={novoEvento.tempo}
+                onChange={e => setNovoEvento(prev => ({ ...prev, tempo: e.target.value }))}
+              >
+                {temposCfg.map(t => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
 
-            <div className="flex gap-2 mb-2">
-              <input className="w-12 p-1.5 rounded border text-[10px] text-center" placeholder="Min" value={novoEvento.minuto} onChange={e => setNovoEvento({ ...novoEvento, minuto: e.target.value })} />
-              <input className="flex-1 p-1.5 rounded border text-[10px]" placeholder="Obs (Ex: Falta)" value={novoEvento.observacao} onChange={e => setNovoEvento({ ...novoEvento, observacao: e.target.value })} />
+              <input
+                className="p-1.5 rounded border text-[10px] font-bold"
+                placeholder="Min (ex: 12)"
+                value={novoEvento.minuto}
+                onChange={e => setNovoEvento(prev => ({ ...prev, minuto: e.target.value }))}
+              />
             </div>
 
-            <button onClick={addEvento} className="w-full bg-slate-900 text-white py-1.5 rounded text-[10px] font-bold uppercase hover:bg-black">
+            {/* ✅ Camisa + atleta (auto) */}
+            <div className="grid grid-cols-2 gap-2 mb-2">
+              <input
+                className="p-1.5 rounded border text-[10px] font-bold"
+                placeholder="Camisa no jogo (ex: 5)"
+                value={novoEvento.camisa_no_jogo}
+                onChange={e => handleCamisaChange(e.target.value)}
+              />
+
+              <select
+                className="p-1.5 rounded border text-[10px] font-bold"
+                value={novoEvento.atleta_id}
+                onChange={(e) =>
+                  handleSelectAtleta(e, novoEvento.equipe === 'A' ? atletasA : atletasB)
+                }
+              >
+                <option value="">Selecione Atleta...</option>
+                {(novoEvento.equipe === 'A' ? atletasA : atletasB).map(a => (
+                  <option key={a.id} value={a.id}>
+                    {(a.numero_camisa ?? a.numero) ? `#${a.numero_camisa ?? a.numero} - ` : ''}{a.nome}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <input
+              className="w-full p-1.5 rounded border text-[10px] font-bold mb-2"
+              placeholder="Obs (Ex: Falta / Goleiro adiantou / etc)"
+              value={novoEvento.observacao}
+              onChange={e => setNovoEvento(prev => ({ ...prev, observacao: e.target.value }))}
+            />
+
+            <button
+              onClick={addEvento}
+              disabled={sumulaLoading}
+              className="w-full bg-slate-900 text-white py-1.5 rounded text-[10px] font-bold uppercase hover:bg-black disabled:opacity-60"
+            >
               Adicionar Evento
             </button>
           </div>
 
-          <div className="space-y-1 max-h-[150px] overflow-y-auto custom-scrollbar">
-            {eventos.map(ev => (
-              <div key={ev.id} className="flex justify-between items-center bg-white p-2 rounded border border-slate-100 text-[9px] font-bold text-slate-600">
-                <span className="flex items-center gap-1">
-                  <span className={`px-1 rounded ${ev.tipo === 'GOL' ? 'bg-green-100 text-green-700' : ev.tipo === 'VERMELHO' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                    {ev.tipo}
+          <div className="space-y-1 max-h-[170px] overflow-y-auto custom-scrollbar">
+            {eventos.map(ev => {
+              const teamName = Number(ev.equipe_id) === Number(jogo.equipe_a_id) ? nomeA : nomeB
+              const tempoTxt = ev.tempo ? String(ev.tempo) : ''
+              const minutoTxt = ev.minuto ? `${ev.minuto}'` : ''
+              const atletaTxt = atletaLabelById(ev.atleta_id, ev.camisa_no_jogo)
+
+              return (
+                <div
+                  key={ev.id}
+                  className="flex justify-between items-center bg-white p-2 rounded border border-slate-100 text-[9px] font-bold text-slate-600"
+                >
+                  <span className="flex items-center gap-1 flex-wrap">
+                    <span className={`px-1 rounded ${
+                      ev.tipo === 'GOL'
+                        ? 'bg-green-100 text-green-700'
+                        : ev.tipo === 'VERMELHO'
+                          ? 'bg-red-100 text-red-700'
+                          : 'bg-yellow-100 text-yellow-700'
+                    }`}>
+                      {ev.tipo}
+                    </span>
+
+                    {tempoTxt && <span className="text-slate-500">{tempoTxt}</span>}
+                    {minutoTxt && <span>{minutoTxt}</span>}
+
+                    <span className="text-slate-400">•</span>
+                    <span className="text-slate-700">{teamName}</span>
+
+                    <span className="text-slate-400">•</span>
+                    <span className="text-slate-900">{atletaTxt}</span>
+
+                    {ev.observacao && (
+                      <>
+                        <span className="text-slate-400">•</span>
+                        <span className="text-slate-500">{String(ev.observacao)}</span>
+                      </>
+                    )}
                   </span>
-                  <span>{ev.minuto}'</span>
-                  <span>{ev.equipe_id === jogo.equipe_a_id ? 'Time A' : 'Time B'}</span>
-                  {ev.camisa_no_jogo && <span className="text-slate-900">#{ev.camisa_no_jogo}</span>}
-                </span>
-                <button onClick={() => delEvento(ev.id, ev.tipo, ev.equipe_id)} className="text-red-300 hover:text-red-500">
-                  <Trash2 size={10} />
-                </button>
-              </div>
-            ))}
-            {eventos.length === 0 && <p className="text-center text-[9px] text-slate-300">Nenhum evento.</p>}
+
+                  <button
+                    onClick={() => delEvento(ev.id, ev.tipo, ev.equipe_id)}
+                    className="text-red-300 hover:text-red-500"
+                    title="Excluir evento"
+                  >
+                    <Trash2 size={10} />
+                  </button>
+                </div>
+              )
+            })}
+            {eventos.length === 0 && (
+              <p className="text-center text-[9px] text-slate-300">Nenhum evento.</p>
+            )}
           </div>
         </div>
       )}
     </div>
   )
+}
+
+// ✅ helper robusto para não quebrar quando a API retornar HTML (Unexpected token '<')
+async function safeJson(res) {
+  const text = await res.text()
+  try {
+    return JSON.parse(text)
+  } catch {
+    // devolve só um pedaço para debug sem explodir a UI
+    return { error: (text || '').slice(0, 160) }
+  }
 }

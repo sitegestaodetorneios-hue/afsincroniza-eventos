@@ -34,9 +34,9 @@ function toNumberOrUndef(v) {
   if (typeof v === 'string') {
     const cleaned = v
       .trim()
-      .replace(/\./g, '')      // separador milhar
-      .replace(',', '.')       // vírgula decimal
-      .replace(/[^\d.-]/g, '') // remove R$, espaços etc
+      .replace(/\./g, '')
+      .replace(',', '.')
+      .replace(/[^\d.-]/g, '')
     const n = Number(cleaned)
     return Number.isFinite(n) ? n : undefined
   }
@@ -64,22 +64,16 @@ export async function GET(request) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   if (!data) return NextResponse.json({})
 
-  // ✅ ADMIN: sem cache (sempre pega do banco)
   if (adminOk) {
     return NextResponse.json(data, {
       status: 200,
-      headers: {
-        'Cache-Control': 'no-store',
-      }
+      headers: { 'Cache-Control': 'no-store' }
     })
   }
 
-  // ✅ PÚBLICO: cache CDN (rápido)
   return NextResponse.json(data, {
     status: 200,
-    headers: {
-      'Cache-Control': 'public, s-maxage=3600, stale-while-revalidate=86400',
-    }
+    headers: { 'Cache-Control': 'public, s-maxage=3600, stale-while-revalidate=86400' }
   })
 }
 
@@ -159,12 +153,11 @@ export async function PUT(request) {
     inscricoes_society_abertas: body.inscricoes_society_abertas,
   })
 
-  // ✅ Upsert garante existir id=1 (evita “salvou” sem existir linha)
-  const payload = { id: 1, ...updates }
-
+  // ✅ UPDATE direto no id=1 (sem inserir id manualmente)
   const { data, error } = await supabase
     .from('config_site')
-    .upsert(payload, { onConflict: 'id' })
+    .update(updates)
+    .eq('id', 1)
     .select('*')
     .single()
 

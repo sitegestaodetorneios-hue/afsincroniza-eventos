@@ -1,7 +1,10 @@
 'use client'
 import { use, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Loader2, ClipboardList, Shirt, RefreshCcw, Trophy, Volume2, Calendar, Clock, MapPin } from 'lucide-react'
+import {
+  ArrowLeft, Loader2, ClipboardList, Shirt, RefreshCcw, Trophy, Volume2, Calendar, Clock, MapPin,
+  Download, Lock, Mail, Shield, X
+} from 'lucide-react'
 
 async function safeJson(res) {
   try { return await res.json() } catch { return {} }
@@ -30,6 +33,15 @@ export default function PartidaDetalhe({ params }) {
   const [data, setData] = useState({ jogo: null, eventos: [], atletasA: [], atletasB: [] })
   const [patrocinios, setPatrocinios] = useState([])
   const mountedRef = useRef(true)
+
+  // ✅ SUMULA (PDF) — modal + auth (Admin ou Professor)
+  const [sumulaOpen, setSumulaOpen] = useState(false)
+  const [sumulaMode, setSumulaMode] = useState('PROFESSOR') // 'PROFESSOR' | 'ADMIN'
+  const [sumulaEmail, setSumulaEmail] = useState('')
+  const [sumulaSenha, setSumulaSenha] = useState('')
+  const [sumulaAdminSenha, setSumulaAdminSenha] = useState('')
+  const [sumulaLoading, setSumulaLoading] = useState(false)
+  const [sumulaError, setSumulaError] = useState('')
 
   useEffect(() => {
     mountedRef.current = true
@@ -87,6 +99,63 @@ export default function PartidaDetalhe({ params }) {
   const logoA = logoUrl(jogo?.equipeA)
   const logoB = logoUrl(jogo?.equipeB)
 
+  async function baixarSumulaPDF() {
+    setSumulaError('')
+    if (!jogoId) return
+
+    if (sumulaMode === 'ADMIN') {
+      if (!sumulaAdminSenha) {
+        setSumulaError('Informe a senha de Admin.')
+        return
+      }
+    } else {
+      if (!sumulaEmail.trim() || !sumulaSenha) {
+        setSumulaError('Informe e-mail e senha do Professor.')
+        return
+      }
+    }
+
+    setSumulaLoading(true)
+    try {
+      const res = await fetch('/api/sumula/baixar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        body: JSON.stringify({
+          jogo_id: String(jogoId),
+          auth: sumulaMode === 'ADMIN'
+            ? { tipo: 'ADMIN', senha_admin: sumulaAdminSenha }
+            : { tipo: 'PROFESSOR', email: sumulaEmail.trim(), senha: sumulaSenha },
+        })
+      })
+
+      if (!res.ok) {
+        const d = await safeJson(res)
+        setSumulaError(d?.error || 'Acesso negado.')
+        return
+      }
+
+      const blob = await res.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `sumula_jogo_${jogoId}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      window.URL.revokeObjectURL(url)
+
+      // fecha modal e limpa senhas (LGPD/segurança)
+      setSumulaOpen(false)
+      setSumulaSenha('')
+      setSumulaAdminSenha('')
+    } catch (e) {
+      setSumulaError('Falha de conexão.')
+    } finally {
+      setSumulaLoading(false)
+    }
+  }
+
   if (loading && !jogo) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center gap-4">
@@ -116,10 +185,24 @@ export default function PartidaDetalhe({ params }) {
             <ArrowLeft size={18} /> Voltar
           </Link>
 
-          <button onClick={() => loadData(false)} className="inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-widest px-4 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition-all shadow-sm group">
-            <RefreshCcw size={14} className={`group-hover:rotate-180 transition-transform ${loading ? "animate-spin" : ""}`} />
-            {loading ? "Atualizando..." : "Atualizar Placar"}
-          </button>
+          <div className="flex items-center gap-2">
+            {/* ✅ NOVO: Baixar Súmula */}
+            <button
+              onClick={() => { setSumulaOpen(true); setSumulaError('') }}
+              className="inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-widest px-4 py-2 rounded-xl border border-slate-200 bg-blue-600 text-white hover:bg-blue-700 transition-all shadow-sm"
+            >
+              <Download size={14} />
+              Baixar Súmula (PDF)
+            </button>
+
+            <button
+              onClick={() => loadData(false)}
+              className="inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-widest px-4 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition-all shadow-sm group"
+            >
+              <RefreshCcw size={14} className={`group-hover:rotate-180 transition-transform ${loading ? "animate-spin" : ""}`} />
+              {loading ? "Atualizando..." : "Atualizar Placar"}
+            </button>
+          </div>
         </div>
 
         {/* BANNER MASTER */}
@@ -322,6 +405,123 @@ export default function PartidaDetalhe({ params }) {
 
         </div>
       </div>
+
+      {/* ✅ MODAL — Baixar Súmula (Admin OU Professor) */}
+      {sumulaOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={() => !sumulaLoading && setSumulaOpen(false)}
+          />
+
+          <div className="relative w-full max-w-md bg-white rounded-[2rem] shadow-2xl border border-slate-200 overflow-hidden">
+            <div className="bg-slate-900 text-white p-5 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Lock size={16} className="text-yellow-400" />
+                <p className="font-black uppercase text-xs tracking-widest">Baixar Súmula (PDF)</p>
+              </div>
+
+              <button
+                onClick={() => !sumulaLoading && setSumulaOpen(false)}
+                className="p-2 rounded-xl hover:bg-white/10"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <p className="text-[11px] text-slate-500 font-bold">
+                Acesso com <b>senha de Admin</b> ou <b>login do Professor</b> (de uma das equipes do jogo).
+                <br />
+                <span className="text-slate-400 font-bold">LGPD: documentos saem mascarados no PDF.</span>
+              </p>
+
+              {/* Modo */}
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setSumulaMode('PROFESSOR'); setSumulaError('') }}
+                  className={`py-2 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${
+                    sumulaMode === 'PROFESSOR'
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  <Mail size={14} className="inline -mt-0.5 mr-2" />
+                  Professor
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => { setSumulaMode('ADMIN'); setSumulaError('') }}
+                  className={`py-2 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${
+                    sumulaMode === 'ADMIN'
+                      ? 'bg-slate-900 text-white border-slate-900'
+                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  <Shield size={14} className="inline -mt-0.5 mr-2" />
+                  Admin
+                </button>
+              </div>
+
+              {/* Campos */}
+              {sumulaMode === 'PROFESSOR' ? (
+                <>
+                  <div className="relative">
+                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                    <input
+                      value={sumulaEmail}
+                      onChange={(e) => setSumulaEmail(e.target.value)}
+                      placeholder="E-mail do Professor"
+                      className="w-full pl-11 pr-4 py-3 rounded-xl border-2 border-slate-100 bg-slate-50 font-bold text-sm outline-none focus:border-blue-600"
+                    />
+                  </div>
+
+                  <div className="relative">
+                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                    <input
+                      type="password"
+                      value={sumulaSenha}
+                      onChange={(e) => setSumulaSenha(e.target.value)}
+                      placeholder="Senha do Professor"
+                      className="w-full pl-11 pr-4 py-3 rounded-xl border-2 border-slate-100 bg-slate-50 font-bold text-sm outline-none focus:border-blue-600"
+                      onKeyDown={(e) => e.key === 'Enter' && baixarSumulaPDF()}
+                    />
+                  </div>
+                </>
+              ) : (
+                <div className="relative">
+                  <Shield className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                  <input
+                    type="password"
+                    value={sumulaAdminSenha}
+                    onChange={(e) => setSumulaAdminSenha(e.target.value)}
+                    placeholder="Senha de Admin"
+                    className="w-full pl-11 pr-4 py-3 rounded-xl border-2 border-slate-100 bg-slate-50 font-bold text-sm outline-none focus:border-slate-900"
+                    onKeyDown={(e) => e.key === 'Enter' && baixarSumulaPDF()}
+                  />
+                </div>
+              )}
+
+              {sumulaError && (
+                <div className="text-[11px] font-black text-red-600 bg-red-50 border border-red-100 rounded-xl p-3">
+                  {sumulaError}
+                </div>
+              )}
+
+              <button
+                onClick={baixarSumulaPDF}
+                disabled={sumulaLoading}
+                className="w-full bg-blue-600 text-white font-black py-3 rounded-xl uppercase text-xs tracking-widest hover:bg-blue-700 disabled:opacity-60 flex items-center justify-center gap-2"
+              >
+                {sumulaLoading ? <Loader2 className="animate-spin" size={16} /> : <Download size={16} />}
+                Gerar e Baixar PDF
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   )
 }
