@@ -2,11 +2,15 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import crypto from 'crypto'
 
-function getSupabase() {
-  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY
+function isUuid(v) {
+  return typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v)
+}
 
-  if (!url) throw new Error('Env faltando: SUPABASE_URL (ou NEXT_PUBLIC_SUPABASE_URL)')
+function getSupabase() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+  if (!url) throw new Error('Env faltando: NEXT_PUBLIC_SUPABASE_URL')
   if (!key) throw new Error('Env faltando: SUPABASE_SERVICE_ROLE_KEY')
 
   return createClient(url, key, { auth: { persistSession: false } })
@@ -21,17 +25,16 @@ async function validateToken(supabase, id, token) {
 
   const token_hash = sha256(token)
 
+  // ✅ valida id + token_hash em uma tacada (mais robusto)
   const { data: row, error } = await supabase
     .from('checklists')
-    .select('id, token_hash')
+    .select('id')
     .eq('id', id)
-    .single()
+    .eq('token_hash', token_hash)
+    .maybeSingle()
 
-  // ✅ agora mostra o erro real (ex.: "relation does not exist", "permission denied", etc.)
   if (error) throw new Error(error.message)
-  if (!row) throw new Error('Checklist não encontrado')
-  if (row.token_hash !== token_hash) throw new Error('Token inválido')
-
+  if (!row) throw new Error('Checklist não encontrado ou token inválido')
   return true
 }
 
@@ -39,6 +42,10 @@ export async function GET(req, { params }) {
   try {
     const supabase = getSupabase()
     const id = params.id
+
+    // ✅ evita erro do Postgres com "undefined"
+    if (!isUuid(id)) return NextResponse.json({ error: 'Checklist id inválido' }, { status: 400 })
+
     const { searchParams } = new URL(req.url)
     const t = searchParams.get('t') || ''
 
@@ -62,12 +69,16 @@ export async function PUT(req, { params }) {
   try {
     const supabase = getSupabase()
     const id = params.id
+
+    // ✅ evita erro do Postgres com "undefined"
+    if (!isUuid(id)) return NextResponse.json({ error: 'Checklist id inválido' }, { status: 400 })
+
     const { searchParams } = new URL(req.url)
     const t = searchParams.get('t') || ''
 
     await validateToken(supabase, id, t)
 
-    const body = await req.json()
+    const body = await req.json().catch(() => ({}))
     if (!body?.data) throw new Error('data é obrigatório')
 
     const patch = { data: body.data }

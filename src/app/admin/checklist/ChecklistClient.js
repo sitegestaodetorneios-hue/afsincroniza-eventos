@@ -21,7 +21,7 @@ const STATUS_LIST = [
   STATUS.OK,
 ]
 
-// Template determinístico (sem random/Date.now) => evita mismatch
+// Template determinístico (sem random/Date.now) => evita mismatch SSR
 const DEFAULT_DATA = [
   {
     id: 'sec_escopo',
@@ -121,6 +121,10 @@ const DEFAULT_DATA = [
   },
 ]
 
+function isUuid(v) {
+  return typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v)
+}
+
 function uid() {
   try {
     return crypto.randomUUID()
@@ -168,15 +172,22 @@ export default function ChecklistClient() {
   const sp = useSearchParams()
   const router = useRouter()
 
-  const cid = sp.get('cid') || ''
-  const token = sp.get('t') || ''
+  const cidParam = sp.get('cid') || ''
+  const tokenParam = sp.get('t') || ''
+
+  // ✅ “à prova de undefined”
+  const cid = isUuid(cidParam) ? cidParam : ''
+  const token =
+    tokenParam && tokenParam !== 'undefined' && tokenParam !== 'null'
+      ? tokenParam
+      : ''
 
   const fileInputRef = useRef(null)
   const saveTimer = useRef(null)
 
   const [title, setTitle] = useState('Checklist TOTAL do Torneio')
   const [data, setData] = useState(DEFAULT_DATA)
-  const [loading, setLoading] = useState(!!cid)
+  const [loading, setLoading] = useState(Boolean(cid))
   const [saving, setSaving] = useState(false)
   const [saveMsg, setSaveMsg] = useState('')
   const [query, setQuery] = useState('')
@@ -213,7 +224,7 @@ export default function ChecklistClient() {
 
   // carrega do banco
   useEffect(() => {
-    if (!cid || cid === 'undefined' || cid === 'null') {
+    if (!cid) {
       setLoading(false)
       return
     }
@@ -265,35 +276,32 @@ export default function ChecklistClient() {
       .filter(sec => (sec.items || []).length > 0)
   }, [data, query, hideSemUtilidade])
 
-  // Autosave
+  // Autosave (só quando tiver cid + token válidos)
   function scheduleSave(nextData, nextTitle = title) {
-  // ✅ NÃO salva se não existe checklist online
-  if (!cid || cid === 'undefined' || cid === 'null') return
-  if (!token || token === 'undefined' || token === 'null') return
-  if (!nextData) return
+    if (!cid || !token) return
+    if (!nextData) return
 
-  if (saveTimer.current) clearTimeout(saveTimer.current)
+    if (saveTimer.current) clearTimeout(saveTimer.current)
 
-  saveTimer.current = setTimeout(async () => {
-    setSaving(true)
-    setSaveMsg('Salvando…')
-    try {
-      const res = await fetch(`/api/checklists/${cid}?t=${encodeURIComponent(token)}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: nextTitle, data: nextData }),
-      })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json?.error || 'Erro ao salvar')
-      setSaveMsg('Salvo ✓')
-    } catch (e) {
-      setSaveMsg(`Falha ao salvar: ${String(e.message || e)}`)
-    } finally {
-      setSaving(false)
-    }
-  }, 700)
-}
-
+    saveTimer.current = setTimeout(async () => {
+      setSaving(true)
+      setSaveMsg('Salvando…')
+      try {
+        const res = await fetch(`/api/checklists/${cid}?t=${encodeURIComponent(token)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: nextTitle, data: nextData }),
+        })
+        const json = await res.json()
+        if (!res.ok) throw new Error(json?.error || 'Erro ao salvar')
+        setSaveMsg('Salvo ✓')
+      } catch (e) {
+        setSaveMsg(`Falha ao salvar: ${String(e.message || e)}`)
+      } finally {
+        setSaving(false)
+      }
+    }, 700)
+  }
 
   // CRUD
   function updateSection(sectionId, patch) {
@@ -404,6 +412,11 @@ export default function ChecklistClient() {
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json?.error || 'Erro ao criar')
+
+      // ✅ valida retorno antes de montar URL
+      if (!json?.id || !isUuid(json.id) || !json?.token) {
+        throw new Error('API não retornou id/token válidos')
+      }
 
       try { localStorage.removeItem('checklist_draft_v1') } catch {}
 
@@ -605,10 +618,8 @@ export default function ChecklistClient() {
           </div>
         </div>
 
-        {/* Add section */}
         <AddSection onAdd={addSection} />
 
-        {/* Sections */}
         <div className="mt-4 space-y-4">
           {filtered.map(sec => (
             <Section
