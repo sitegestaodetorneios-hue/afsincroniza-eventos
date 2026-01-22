@@ -3,9 +3,12 @@ import { createClient } from '@supabase/supabase-js'
 import crypto from 'crypto'
 
 function getSupabase() {
-  const url = process.env.SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) throw new Error('SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY não configurados')
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY
+
+  if (!url) throw new Error('Env faltando: SUPABASE_URL (ou NEXT_PUBLIC_SUPABASE_URL)')
+  if (!key) throw new Error('Env faltando: SUPABASE_SERVICE_ROLE_KEY')
+
   return createClient(url, key, { auth: { persistSession: false } })
 }
 
@@ -14,29 +17,25 @@ function sha256(s) {
 }
 
 export async function POST(req) {
-  const supabase = getSupabase()
-  const body = await req.json().catch(() => ({}))
-  const title = (body?.title || 'Checklist TOTAL do Torneio').trim()
+  try {
+    const supabase = getSupabase()
+    const body = await req.json().catch(() => ({}))
+    const title = (body?.title || 'Checklist TOTAL do Torneio').trim()
+    const data = body?.data ?? []
 
-  // token “secreto” (vai ficar na URL)
-  const token = crypto.randomBytes(24).toString('hex')
-  const token_hash = sha256(token)
+    const token = crypto.randomBytes(24).toString('hex')
+    const token_hash = sha256(token)
 
-  // data inicial pode vir do client; se não vier, salva um esqueleto
-  const data = body?.data ?? []
+    const { data: row, error } = await supabase
+      .from('checklists')
+      .insert({ title, data, token_hash })
+      .select('id,title,created_at,updated_at')
+      .single()
 
-  const { data: row, error } = await supabase
-    .from('checklists')
-    .insert({ title, data, token_hash })
-    .select('id,title,created_at,updated_at')
-    .single()
+    if (error) throw new Error(error.message)
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 400 })
+    return NextResponse.json({ id: row.id, token, title: row.title })
+  } catch (e) {
+    return NextResponse.json({ error: String(e.message || e) }, { status: 500 })
   }
-
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || ''
-  const url = `${baseUrl}/admin/checklist?cid=${row.id}&t=${token}`
-
-  return NextResponse.json({ id: row.id, token, url, title: row.title })
 }

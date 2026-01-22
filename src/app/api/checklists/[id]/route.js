@@ -3,9 +3,12 @@ import { createClient } from '@supabase/supabase-js'
 import crypto from 'crypto'
 
 function getSupabase() {
-  const url = process.env.SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) throw new Error('SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY não configurados')
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY
+
+  if (!url) throw new Error('Env faltando: SUPABASE_URL (ou NEXT_PUBLIC_SUPABASE_URL)')
+  if (!key) throw new Error('Env faltando: SUPABASE_SERVICE_ROLE_KEY')
+
   return createClient(url, key, { auth: { persistSession: false } })
 }
 
@@ -13,8 +16,9 @@ function sha256(s) {
   return crypto.createHash('sha256').update(String(s)).digest('hex')
 }
 
-async function validateTokenOrThrow(supabase, id, token) {
-  if (!token) throw new Error('Token ausente')
+async function validateToken(supabase, id, token) {
+  if (!token) throw new Error('Token ausente (param t=...)')
+
   const token_hash = sha256(token)
 
   const { data: row, error } = await supabase
@@ -23,50 +27,51 @@ async function validateTokenOrThrow(supabase, id, token) {
     .eq('id', id)
     .single()
 
-  if (error || !row) throw new Error('Checklist não encontrado')
+  // ✅ agora mostra o erro real (ex.: "relation does not exist", "permission denied", etc.)
+  if (error) throw new Error(error.message)
+  if (!row) throw new Error('Checklist não encontrado')
   if (row.token_hash !== token_hash) throw new Error('Token inválido')
 
   return true
 }
 
 export async function GET(req, { params }) {
-  const supabase = getSupabase()
-  const id = params.id
-  const { searchParams } = new URL(req.url)
-  const t = searchParams.get('t') || ''
-
   try {
-    await validateTokenOrThrow(supabase, id, t)
+    const supabase = getSupabase()
+    const id = params.id
+    const { searchParams } = new URL(req.url)
+    const t = searchParams.get('t') || ''
+
+    await validateToken(supabase, id, t)
+
     const { data: row, error } = await supabase
       .from('checklists')
       .select('id,title,data,created_at,updated_at')
       .eq('id', id)
       .single()
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+    if (error) throw new Error(error.message)
+
     return NextResponse.json(row)
   } catch (e) {
-    return NextResponse.json({ error: e.message }, { status: 401 })
+    return NextResponse.json({ error: String(e.message || e) }, { status: 401 })
   }
 }
 
 export async function PUT(req, { params }) {
-  const supabase = getSupabase()
-  const id = params.id
-  const { searchParams } = new URL(req.url)
-  const t = searchParams.get('t') || ''
-
   try {
-    await validateTokenOrThrow(supabase, id, t)
+    const supabase = getSupabase()
+    const id = params.id
+    const { searchParams } = new URL(req.url)
+    const t = searchParams.get('t') || ''
+
+    await validateToken(supabase, id, t)
 
     const body = await req.json()
-    const title = typeof body?.title === 'string' ? body.title.trim() : undefined
-    const data = body?.data
+    if (!body?.data) throw new Error('data é obrigatório')
 
-    if (!data) return NextResponse.json({ error: 'data é obrigatório' }, { status: 400 })
-
-    const patch = { data }
-    if (title) patch.title = title
+    const patch = { data: body.data }
+    if (typeof body?.title === 'string' && body.title.trim()) patch.title = body.title.trim()
 
     const { data: row, error } = await supabase
       .from('checklists')
@@ -75,9 +80,10 @@ export async function PUT(req, { params }) {
       .select('id,title,updated_at')
       .single()
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+    if (error) throw new Error(error.message)
+
     return NextResponse.json({ ok: true, ...row })
   } catch (e) {
-    return NextResponse.json({ error: e.message }, { status: 401 })
+    return NextResponse.json({ error: String(e.message || e) }, { status: 401 })
   }
 }
