@@ -213,7 +213,7 @@ export default function ChecklistClient() {
 
   // carrega do banco
   useEffect(() => {
-    if (!cid) {
+    if (!cid || cid === 'undefined' || cid === 'null') {
       setLoading(false)
       return
     }
@@ -267,28 +267,33 @@ export default function ChecklistClient() {
 
   // Autosave
   function scheduleSave(nextData, nextTitle = title) {
-    if (!cid || !token) return
-    if (saveTimer.current) clearTimeout(saveTimer.current)
+  // ✅ NÃO salva se não existe checklist online
+  if (!cid || cid === 'undefined' || cid === 'null') return
+  if (!token || token === 'undefined' || token === 'null') return
+  if (!nextData) return
 
-    saveTimer.current = setTimeout(async () => {
-      setSaving(true)
-      setSaveMsg('Salvando…')
-      try {
-        const res = await fetch(`/api/checklists/${cid}?t=${encodeURIComponent(token)}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title: nextTitle, data: nextData }),
-        })
-        const json = await res.json()
-        if (!res.ok) throw new Error(json?.error || 'Erro ao salvar')
-        setSaveMsg('Salvo ✓')
-      } catch (e) {
-        setSaveMsg(`Falha ao salvar: ${String(e.message || e)}`)
-      } finally {
-        setSaving(false)
-      }
-    }, 700)
-  }
+  if (saveTimer.current) clearTimeout(saveTimer.current)
+
+  saveTimer.current = setTimeout(async () => {
+    setSaving(true)
+    setSaveMsg('Salvando…')
+    try {
+      const res = await fetch(`/api/checklists/${cid}?t=${encodeURIComponent(token)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: nextTitle, data: nextData }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json?.error || 'Erro ao salvar')
+      setSaveMsg('Salvo ✓')
+    } catch (e) {
+      setSaveMsg(`Falha ao salvar: ${String(e.message || e)}`)
+    } finally {
+      setSaving(false)
+    }
+  }, 700)
+}
+
 
   // CRUD
   function updateSection(sectionId, patch) {
