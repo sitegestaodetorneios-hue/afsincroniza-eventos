@@ -7,10 +7,10 @@ function isUuid(v) {
 }
 
 function getSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY
 
-  if (!url) throw new Error('Env faltando: NEXT_PUBLIC_SUPABASE_URL')
+  if (!url) throw new Error('Env faltando: NEXT_PUBLIC_SUPABASE_URL (ou SUPABASE_URL)')
   if (!key) throw new Error('Env faltando: SUPABASE_SERVICE_ROLE_KEY')
 
   return createClient(url, key, { auth: { persistSession: false } })
@@ -22,10 +22,9 @@ function sha256(s) {
 
 async function validateToken(supabase, id, token) {
   if (!token) throw new Error('Token ausente (param t=...)')
-
   const token_hash = sha256(token)
 
-  // ✅ valida id + token_hash em uma tacada (mais robusto)
+  // ✅ valida id + token_hash em uma tacada
   const { data: row, error } = await supabase
     .from('checklists')
     .select('id')
@@ -38,13 +37,17 @@ async function validateToken(supabase, id, token) {
   return true
 }
 
-export async function GET(req, { params }) {
+export async function GET(req, ctx) {
   try {
     const supabase = getSupabase()
-    const id = params.id
 
-    // ✅ evita erro do Postgres com "undefined"
-    if (!isUuid(id)) return NextResponse.json({ error: 'Checklist id inválido' }, { status: 400 })
+    // ✅ Next 16: params é Promise
+    const params = await ctx.params
+    const id = params?.id
+
+    if (!isUuid(id)) {
+      return NextResponse.json({ error: 'Checklist id inválido' }, { status: 400 })
+    }
 
     const { searchParams } = new URL(req.url)
     const t = searchParams.get('t') || ''
@@ -65,13 +68,17 @@ export async function GET(req, { params }) {
   }
 }
 
-export async function PUT(req, { params }) {
+export async function PUT(req, ctx) {
   try {
     const supabase = getSupabase()
-    const id = params.id
 
-    // ✅ evita erro do Postgres com "undefined"
-    if (!isUuid(id)) return NextResponse.json({ error: 'Checklist id inválido' }, { status: 400 })
+    // ✅ Next 16: params é Promise
+    const params = await ctx.params
+    const id = params?.id
+
+    if (!isUuid(id)) {
+      return NextResponse.json({ error: 'Checklist id inválido' }, { status: 400 })
+    }
 
     const { searchParams } = new URL(req.url)
     const t = searchParams.get('t') || ''
