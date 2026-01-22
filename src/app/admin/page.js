@@ -37,6 +37,11 @@ export default function AdminPanel() {
     texto_topo: '', titulo_destaque: '', subtitulo: '',
     imagem_fundo: '', titulo_card_hero: '', texto_card_hero: '',
     data_limite: '', valor_premio: '',
+    // ✅ NOVO: Redes Sociais
+    social_instagram: '',
+    social_facebook: '',
+    social_youtube: '',
+    social_site: '',
 
     // ✅ NOVO: textos do HERO (layout novo)
     hero_headline: '',
@@ -84,7 +89,11 @@ export default function AdminPanel() {
           hero_headline: cfg.hero_headline || '',
           hero_tagline: cfg.hero_tagline || '',
           hero_badge: cfg.hero_badge || '',
-
+          // ✅ garante string (evita null quebrar input controlado)
+          social_instagram: cfg.social_instagram || '',
+          social_facebook: cfg.social_facebook || '',
+          social_youtube: cfg.social_youtube || '',
+          social_site: cfg.social_site || '',
           vagas_futsal: Number(cfg.vagas_futsal || 0),
           vagas_society: Number(cfg.vagas_society || 0),
           preco_futsal: Number(cfg.preco_futsal || 0.00),
@@ -462,6 +471,68 @@ async function salvarConfig() {
                 </div>
               </div>
             </div>
+              {/* SEÇÃO 1.1: REDES SOCIAIS */}
+               <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-200">
+                 <h3 className="flex items-center gap-3 font-black uppercase text-slate-800 text-sm mb-6 pb-4 border-b border-slate-100">
+                  <MessageSquare size={18} className="text-blue-600" /> 1.1 Redes Sociais (Topo do Site)
+  </h3>
+
+  <div className="grid md:grid-cols-2 gap-6">
+    <div>
+      <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2 block">
+        Instagram (URL)
+      </label>
+      <input
+        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-700 outline-none"
+        placeholder="https://instagram.com/sua_pagina"
+        value={config.social_instagram || ''}
+        onChange={(e) => setConfig({ ...config, social_instagram: e.target.value })}
+      />
+    </div>
+
+    <div>
+      <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2 block">
+        Facebook (URL)
+      </label>
+      <input
+        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-700 outline-none"
+        placeholder="https://facebook.com/sua_pagina"
+        value={config.social_facebook || ''}
+        onChange={(e) => setConfig({ ...config, social_facebook: e.target.value })}
+      />
+    </div>
+
+    <div>
+      <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2 block">
+        YouTube (URL)
+      </label>
+      <input
+        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-700 outline-none"
+        placeholder="https://youtube.com/@seucanal"
+        value={config.social_youtube || ''}
+        onChange={(e) => setConfig({ ...config, social_youtube: e.target.value })}
+      />
+    </div>
+
+    <div>
+      <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2 block">
+        Site (URL)
+      </label>
+      <input
+        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-700 outline-none"
+        placeholder="https://seusite.com.br"
+        value={config.social_site || ''}
+        onChange={(e) => setConfig({ ...config, social_site: e.target.value })}
+      />
+    </div>
+
+    <div className="md:col-span-2">
+      <p className="text-[10px] text-slate-500 font-bold">
+        Dica: pode deixar em branco. Quando preencher, os ícones do topo ficam clicáveis automaticamente.
+      </p>
+    </div>
+  </div>
+</div>
 
             {/* SEÇÃO 2: CAPA DO SITE (HERO) */}
             <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-200">

@@ -107,6 +107,12 @@ export async function PUT(request) {
     missao: body.missao,
     valores: body.valores,
 
+    // ✅ NOVO: Redes sociais (pronto para receber links)
+    social_instagram: body.social_instagram,
+    social_facebook: body.social_facebook,
+    social_youtube: body.social_youtube,
+    social_site: body.social_site,
+
     // 2. Status de Inscrição
     status_futsal: body.status_futsal,
     status_society: body.status_society,
